@@ -3,186 +3,340 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1220" />
+  <meta name="theme-color" content="#f6f2ea" />
   <meta name="description" content="매일 할 일 체크, 공부 계획·복습, 가계부, 한 줄 일기를 한곳에. 기록은 내 기기에만 저장돼요." />
-  <title>Daily Log | 오늘의 기록</title>
+  <title>Daily Log | 나를 쌓는 작은 기록</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="topbar">
-      <div class="brand"><span class="brand-icon" aria-hidden="true">✓</span> DAILY LOG</div>
-      <div id="dateNav" class="date-nav">
-        <button id="prevDay" type="button" class="icon-btn" aria-label="전날">◀</button>
-        <span id="dateLabel" class="date-label"></span>
-        <button id="nextDay" type="button" class="icon-btn" aria-label="다음 날">▶</button>
-        <button id="todayButton" type="button" class="chip" hidden>오늘</button>
+  <!-- 선 아이콘 모음 (아래에서 <use href="#i-이름"> 으로 꺼내 씁니다) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h4.5v-6h4v6h4.5V9"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m8.3 12.3 2.6 2.6 5-5.2"/></symbol>
+      <symbol id="i-check-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 5-5"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10.4 5 8 4.5 3.5 4.5v14c4.5 0 6.9.5 8.5 2 1.6-1.5 4-2 8.5-2v-14C16 4.5 13.6 5 12 6.5Z"/><path d="M12 6.5v14"/></symbol>
+      <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 9.5h18"/><path d="M15.5 14.5h2"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M11 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V13"/><path d="M17.3 3.7a2 2 0 0 1 2.9 2.9L12 14.8l-3.6.9.9-3.6Z"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.4-3.7 4.2-5.6 7.5-5.6s6.1 1.9 7.5 5.6"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></symbol>
+      <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="6.5" rx="7" ry="3"/><path d="M5 6.5v5.5c0 1.7 3.1 3 7 3s7-1.3 7-3V6.5"/><path d="M5 12v5.5c0 1.7 3.1 3 7 3s7-1.3 7-3V12"/></symbol>
+      <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.6 14.2c.9 1.3 2 2 3.4 2s2.5-.7 3.4-2"/><path d="M9.2 9.6h.01M14.8 9.6h.01"/></symbol>
+      <symbol id="i-utensils" viewBox="0 0 24 24"><path d="M6.5 3.5v7.5M4.5 3.5v4.8a2 2 0 0 0 4 0V3.5M6.5 11v9.5"/><path d="M17 20.5v-17c-2 1-3.2 3.6-3.2 6.6V13H17"/></symbol>
+      <symbol id="i-cup" viewBox="0 0 24 24"><path d="M4.5 8.5h11v5.5a4.5 4.5 0 0 1-4.5 4.5H9A4.5 4.5 0 0 1 4.5 14Z"/><path d="M15.5 10H17a2.5 2.5 0 0 1 0 5h-1.5"/><path d="M8 4v2M12 4v2"/></symbol>
+      <symbol id="i-bus" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="14.5" rx="3"/><path d="M5 11h14M8 18v2.5M16 18v2.5"/><path d="M8.5 14.5h.01M15.5 14.5h.01"/></symbol>
+      <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5 8h14l-1.1 12H6.1Z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 19.5s-7-4.3-7-9.6A3.9 3.9 0 0 1 12 7.6a3.9 3.9 0 0 1 7 2.3c0 5.3-7 9.6-7 9.6Z"/></symbol>
+      <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3.5 7h17v3a2 2 0 0 0 0 4v3h-17v-3a2 2 0 0 0 0-4Z"/><path d="M14 7.5v1.5M14 11.3v1.4M14 15v1.5"/></symbol>
+      <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 9.5l1.6 5.5 1.9-5 1.9 5 1.6-5.5M8 12h8"/></symbol>
+      <symbol id="i-dots" viewBox="0 0 24 24"><path d="M6.5 12h.01M12 12h.01M17.5 12h.01"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
+      <symbol id="i-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+      <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4.5 19.5l1-4L16 5a2.1 2.1 0 0 1 3 3L8.5 18.5Z"/></symbol>
+      <symbol id="i-leaf" viewBox="0 0 40 40">
+        <path d="M8 34C14 26 21 17 33 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M15 25c-5 1-9-1-11-5 5-2 9-.5 11 5ZM20 19c-1-5 1-9 5-11 2 5 .5 9-5 11ZM23 17c4-3 9-3 12-.5-3.5 3-8 3-12 .5ZM14 27c4-3.5 9-3.5 12-1-3.5 3-8 3.3-12 1ZM26 12c0-4 2.5-7 6-8 1 4-1.5 7-6 8Z" fill="currentColor" stroke="none"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <div class="layout">
+    <!-- 컴퓨터: 왼쪽 메뉴 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <svg class="brand-leaf" aria-hidden="true"><use href="#i-leaf"/></svg>
+        <div><strong>Daily Log</strong><small>나를 쌓는 작은 기록</small></div>
       </div>
-    </header>
-
-    <nav class="tabs" role="tablist" aria-label="기능">
-      <button type="button" role="tab" data-tab="habits">✅ 습관</button>
-      <button type="button" role="tab" data-tab="study">📖 공부</button>
-      <button type="button" role="tab" data-tab="money">💰 가계부</button>
-      <button type="button" role="tab" data-tab="diary">📔 일기</button>
-      <button type="button" role="tab" data-tab="settings">⚙️ 설정</button>
-    </nav>
-
-    <!-- 습관 -->
-    <section id="habitsView" class="view" role="tabpanel" hidden>
-      <div class="card">
-        <div class="card-head">
-          <h2>오늘 할 일</h2>
-          <span id="habitProgress" class="muted"></span>
+      <nav class="side-nav" aria-label="메뉴">
+        <button type="button" data-tab="today"><svg class="ico"><use href="#i-home"/></svg>오늘</button>
+        <button type="button" data-tab="habits"><svg class="ico"><use href="#i-check"/></svg>습관</button>
+        <button type="button" data-tab="study"><svg class="ico"><use href="#i-book"/></svg>공부</button>
+        <button type="button" data-tab="money"><svg class="ico"><use href="#i-wallet"/></svg>가계부</button>
+        <button type="button" data-tab="diary"><svg class="ico"><use href="#i-edit"/></svg>하루 기록</button>
+      </nav>
+      <div class="side-bottom">
+        <button type="button" data-tab="settings" class="side-settings"><svg class="ico"><use href="#i-settings"/></svg>설정</button>
+        <div class="streak-card">
+          <p><span aria-hidden="true">🔥</span> <b id="recordStreak">0</b>일째 기록 중</p>
+          <div id="recordDots" class="record-dots" aria-label="최근 7일 기록"></div>
         </div>
-        <div class="progress"><div id="habitBar" class="progress-bar"></div></div>
-        <ul id="habitList" class="habit-list"></ul>
-        <p id="habitEmpty" class="empty" hidden>아직 습관이 없어요. 아래에서 첫 습관을 추가해 보세요.<br>예) 💧 물 2L 마시기, 🏃 30분 운동, 📚 영어 단어 20개</p>
       </div>
-      <form id="habitForm" class="card habit-form">
-        <div class="add-row">
-          <input id="habitEmoji" class="emoji-input" maxlength="4" value="✅" aria-label="이모지" />
-          <input id="habitName" maxlength="40" placeholder="새 습관 이름" aria-label="습관 이름" required />
-        </div>
-        <div class="add-row">
-          <label class="target-label">하루<input id="habitTarget" type="number" inputmode="numeric" min="1" max="20" value="1" aria-label="하루 목표 횟수" /></label>
-          <input id="habitUnit" maxlength="6" placeholder="단위 (번·잔·알)" aria-label="단위" />
-          <button type="submit" class="primary">추가</button>
-        </div>
-        <p class="muted small form-hint">예) 💧 물 마시기 · 하루 3 · 잔 → 한 잔 마실 때마다 한 번씩 눌러요</p>
-      </form>
-      <button id="habitEditToggle" type="button" class="link-btn" aria-pressed="false">습관 편집</button>
-    </section>
+    </aside>
 
-    <!-- 공부 -->
-    <section id="studyView" class="view" role="tabpanel" hidden>
-      <div id="goalList"></div>
-      <p id="studyEmpty" class="card empty" hidden>단어장이나 책처럼 끝내고 싶은 공부를 목표로 넣어 보세요.<br>목표일에 맞춰 매일 할 분량과 복습을 알려 드려요.</p>
-      <button id="goalAddToggle" type="button" class="primary wide">+ 새 공부 목표</button>
+    <main class="main">
+      <!-- 폰: 위쪽 로고와 설정 -->
+      <header class="mobile-top">
+        <div class="brand small-brand">
+          <svg class="brand-leaf" aria-hidden="true"><use href="#i-leaf"/></svg>
+          <strong>Daily Log</strong>
+        </div>
+        <button type="button" data-tab="settings" class="profile-btn" aria-label="설정"><svg class="ico"><use href="#i-user"/></svg></button>
+      </header>
 
-      <form id="goalForm" class="card goal-form" hidden>
-        <h2>새 공부 목표</h2>
-        <div class="segmented" role="radiogroup" aria-label="종류">
-          <button type="button" data-kind="cards" role="radio">🔤 단어 카드</button>
-          <button type="button" data-kind="amount" role="radio">📘 책·강의 분량</button>
+      <header class="page-head">
+        <div class="page-text">
+          <div id="dateNav" class="date-nav">
+            <button id="prevDay" type="button" class="nav-arrow" aria-label="전날"><svg class="ico"><use href="#i-left"/></svg></button>
+            <span id="dateLabel" class="date-label"></span>
+            <button id="nextDay" type="button" class="nav-arrow" aria-label="다음 날"><svg class="ico"><use href="#i-right"/></svg></button>
+            <button id="todayButton" type="button" class="chip" hidden>오늘로</button>
+          </div>
+          <h1 id="pageTitle"></h1>
+          <p id="pageSub" class="page-sub"></p>
         </div>
-        <div class="add-row">
-          <input id="goalEmoji" class="emoji-input" maxlength="4" value="📚" aria-label="이모지" />
-          <input id="goalName" maxlength="40" placeholder="목표 이름 예) 토익 보카" aria-label="목표 이름" required />
-        </div>
-        <div id="goalCardsFields" class="field-stack">
-          <textarea id="goalCards" rows="6" placeholder="한 줄에 하나씩: 단어 - 뜻&#10;apple - 사과&#10;abandon - 버리다, 포기하다&#10;(엑셀에서 두 칸을 복사해 붙여 넣어도 돼요)" aria-label="단어 목록"></textarea>
-          <p id="goalCardsCount" class="muted small"></p>
-        </div>
-        <div id="goalAmountFields" class="field-row">
-          <input id="goalTotal" inputmode="numeric" placeholder="전체 분량 예) 320" aria-label="전체 분량" autocomplete="off" />
-          <select id="goalUnit" aria-label="단위"></select>
-        </div>
-        <label class="field-label">언제까지 끝낼까요?<input id="goalDeadline" type="date" required /></label>
-        <label class="field-label">내 수준<select id="goalLevel"></select></label>
-        <p id="goalPreview" class="preview"></p>
-        <div class="button-row">
-          <button type="submit" class="primary">목표 만들기</button>
-          <button id="goalCancel" type="button" class="secondary">취소</button>
-        </div>
-      </form>
-
-      <section id="cardSession" class="card session" hidden aria-live="polite">
-        <div class="card-head">
-          <h2 id="sessionTitle"></h2>
-          <div class="session-tools">
-            <button id="typingToggle" type="button" class="chip" aria-pressed="false" aria-label="직접 쳐서 맞히기">⌨️</button>
-            <button id="sessionClose" type="button" class="icon-btn" aria-label="그만하기">×</button>
+        <svg id="heroArt" class="hero-art" viewBox="0 0 340 170" aria-hidden="true">
+          <path d="M0 170c38-36 86-50 136-40s74 30 114 22 62-22 90-20v38Z" fill="#f1dccd" opacity=".75"/>
+          <path d="M70 170c30-24 72-30 112-22s86 18 158 2v20Z" fill="#ecd0bd" opacity=".55"/>
+          <g fill="none" stroke="#86a07a" stroke-width="2" stroke-linecap="round">
+            <path d="M178 168c-2-38-10-70-34-104"/>
+            <path d="M180 168c6-42 22-76 56-104"/>
+            <path d="M176 134c-20-14-44-20-70-18"/>
+            <path d="M182 124c22-14 48-16 78-8"/>
+            <path d="M144 64c-4-10-3-22 2-32"/>
+            <path d="M144 64c-10-6-22-8-34-6"/>
+            <path d="M236 64c4-12 12-20 22-26"/>
+            <path d="M236 64c12-2 24 0 34 8"/>
+          </g>
+          <g fill="#a9c19b">
+            <ellipse cx="126" cy="112" rx="22" ry="7" transform="rotate(-18 126 112)"/>
+            <ellipse cx="158" cy="96" rx="20" ry="6.5" transform="rotate(-62 158 96)"/>
+            <ellipse cx="224" cy="114" rx="22" ry="7" transform="rotate(14 224 114)"/>
+            <ellipse cx="206" cy="88" rx="20" ry="6.5" transform="rotate(-48 206 88)"/>
+            <ellipse cx="160" cy="138" rx="16" ry="5.5" transform="rotate(30 160 138)"/>
+            <ellipse cx="198" cy="142" rx="16" ry="5.5" transform="rotate(-30 198 142)"/>
+          </g>
+          <g fill="#c4d6b6">
+            <ellipse cx="132" cy="80" rx="14" ry="5" transform="rotate(30 132 80)"/>
+            <ellipse cx="250" cy="82" rx="14" ry="5" transform="rotate(-25 250 82)"/>
+          </g>
+          <g fill="#fffaf2" stroke="#e8bf93" stroke-width="1.2">
+            <circle cx="146" cy="30" r="4"/><circle cx="138" cy="36" r="3.4"/><circle cx="153" cy="38" r="3.2"/>
+            <circle cx="108" cy="57" r="3.6"/><circle cx="100" cy="62" r="3"/><circle cx="111" cy="65" r="2.8"/>
+            <circle cx="260" cy="36" r="4"/><circle cx="252" cy="31" r="3.2"/><circle cx="266" cy="44" r="3"/>
+            <circle cx="272" cy="72" r="3.6"/><circle cx="280" cy="78" r="3"/><circle cx="104" cy="115" r="3.4"/>
+            <circle cx="262" cy="114" r="3.4"/><circle cx="270" cy="108" r="2.8"/>
+          </g>
+          <g fill="#f0c48c">
+            <circle cx="146" cy="30" r="1.3"/><circle cx="108" cy="57" r="1.2"/><circle cx="260" cy="36" r="1.3"/><circle cx="272" cy="72" r="1.2"/>
+          </g>
+        </svg>
+        <div class="quick">
+          <button id="quickButton" type="button" class="primary quick-btn" aria-expanded="false"><svg class="ico"><use href="#i-plus"/></svg>기록하기</button>
+          <div id="quickMenu" class="quick-menu" hidden>
+            <button type="button" data-quick="money"><svg class="ico"><use href="#i-wallet"/></svg>지출·수입 적기</button>
+            <button type="button" data-quick="diary"><svg class="ico"><use href="#i-edit"/></svg>오늘의 한 줄 쓰기</button>
+            <button type="button" data-quick="habits"><svg class="ico"><use href="#i-check"/></svg>습관 체크하기</button>
           </div>
         </div>
-        <div class="progress"><div id="sessionBar" class="progress-bar"></div></div>
-        <p id="sessionCount" class="muted small right"></p>
-        <button id="flashcard" type="button" class="flashcard">
-          <span id="cardFront" class="card-front"></span>
-          <span id="cardBack" class="card-back" hidden></span>
-          <span id="cardHint" class="muted small">눌러서 뜻 보기 (Space)</span>
-        </button>
-        <p id="typeResult" class="type-result" hidden></p>
-        <form id="typeForm" class="type-form" hidden>
-          <input id="typeInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="단어를 쳐 보세요" aria-label="정답 입력" />
-          <button type="submit" class="primary">확인</button>
-        </form>
-        <div id="sessionButtons" class="rate-row"></div>
+      </header>
+
+      <!-- 오늘 (홈) -->
+      <section id="todayView" class="view" role="tabpanel" hidden>
+        <div class="stat-cards">
+          <button type="button" class="stat" data-go="habits"><span class="stat-icon green"><svg class="ico"><use href="#i-check-square"/></svg></span><span><small>오늘의 습관</small><b id="statHabits"></b></span></button>
+          <button type="button" class="stat" data-go="study"><span class="stat-icon peach"><svg class="ico"><use href="#i-book"/></svg></span><span><small>오늘의 공부</small><b id="statStudy"></b></span></button>
+          <button type="button" class="stat" data-go="money"><span class="stat-icon yellow"><svg class="ico"><use href="#i-coins"/></svg></span><span><small>오늘의 지출</small><b id="statMoney"></b></span></button>
+          <button type="button" class="stat" data-go="diary"><span class="stat-icon rose"><svg class="ico"><use href="#i-smile"/></svg></span><span><small>오늘의 기분</small><b id="statMood"></b></span></button>
+        </div>
+        <div class="dash">
+          <div class="dash-col">
+            <article class="card dash-habits">
+              <div class="card-head"><h2>오늘의 습관</h2><b id="todayHabitPct" class="pct"></b></div>
+              <div class="progress"><div id="todayHabitBar" class="progress-bar"></div></div>
+              <ul id="todayHabitList" class="today-list"></ul>
+              <p id="todayHabitEmpty" class="empty" hidden>아직 습관이 없어요. <button type="button" class="link-btn inline" data-go="habits">첫 습관 만들기 ›</button></p>
+            </article>
+            <article class="card dash-study">
+              <div class="card-head"><h2>오늘의 공부</h2><button type="button" class="link-btn inline" data-go="study">전체 보기 ›</button></div>
+              <div id="todayStudy"></div>
+            </article>
+          </div>
+          <div class="dash-col">
+            <article class="card dash-week">
+              <h2>이번 주의 흐름</h2>
+              <div id="weekChart" class="week-chart" role="list" aria-label="요일별 습관 달성률"></div>
+            </article>
+            <article class="card dash-money">
+              <div class="card-head"><h2>오늘 쓴 돈</h2><button type="button" class="link-btn inline" data-go="money">기록하기 ›</button></div>
+              <ul id="todayMoney" class="today-money"></ul>
+              <p id="todayMoneyEmpty" class="empty" hidden>오늘은 아직 쓴 돈이 없어요.</p>
+            </article>
+            <article class="card dash-line">
+              <div class="card-head"><h2>오늘의 한 줄</h2><button type="button" class="link-btn inline" data-go="diary">작성하기 ›</button></div>
+              <div id="todayMoods" class="mood-row compact" role="radiogroup" aria-label="오늘의 기분"></div>
+              <button type="button" class="line-box" data-go="diary"><svg class="ico"><use href="#i-pencil"/></svg><span id="todayLineText"></span></button>
+            </article>
+          </div>
+        </div>
       </section>
-    </section>
 
-    <!-- 가계부 -->
-    <section id="moneyView" class="view" role="tabpanel" hidden>
-      <form id="entryForm" class="card entry-form">
-        <div class="segmented" role="radiogroup" aria-label="종류">
-          <button type="button" data-type="expense" role="radio">지출</button>
-          <button type="button" data-type="income" role="radio">수입</button>
+      <!-- 습관 -->
+      <section id="habitsView" class="view" role="tabpanel" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>오늘의 습관</h2>
+            <span id="habitProgress" class="muted"></span>
+          </div>
+          <div class="progress"><div id="habitBar" class="progress-bar"></div></div>
+          <ul id="habitList" class="habit-list"></ul>
+          <p id="habitEmpty" class="empty" hidden>아직 습관이 없어요. 아래에서 첫 습관을 추가해 보세요.<br>예) 💧 물 2L 마시기, 🏃 30분 운동, 📚 영어 단어 20개</p>
         </div>
-        <div class="field-row">
-          <input id="entryAmount" inputmode="numeric" placeholder="금액 (원)" aria-label="금액" autocomplete="off" required />
-          <select id="entryCategory" aria-label="분류"></select>
-        </div>
-        <input id="entryMemo" maxlength="100" placeholder="메모 (선택) 예) 점심 김밥" aria-label="메모" autocomplete="off" />
-        <button type="submit" class="primary wide">이 날짜에 기록하기</button>
-      </form>
+        <form id="habitForm" class="card habit-form">
+          <div class="add-row">
+            <input id="habitEmoji" class="emoji-input" maxlength="4" value="✅" aria-label="이모지" />
+            <input id="habitName" maxlength="40" placeholder="새 습관 이름" aria-label="습관 이름" required />
+          </div>
+          <div class="add-row">
+            <label class="target-label">하루<input id="habitTarget" type="number" inputmode="numeric" min="1" max="20" value="1" aria-label="하루 목표 횟수" /></label>
+            <input id="habitUnit" maxlength="6" placeholder="단위 (번·잔·알)" aria-label="단위" />
+            <button type="submit" class="primary">추가</button>
+          </div>
+          <p class="muted small form-hint">예) 💧 물 마시기 · 하루 3 · 잔 → 한 잔 마실 때마다 한 번씩 눌러요</p>
+        </form>
+        <button id="habitEditToggle" type="button" class="link-btn" aria-pressed="false">습관 편집</button>
+      </section>
 
-      <div class="card">
-        <div class="card-head">
-          <button id="prevMonth" type="button" class="icon-btn" aria-label="이전 달">◀</button>
-          <h2 id="monthLabel"></h2>
-          <button id="nextMonth" type="button" class="icon-btn" aria-label="다음 달">▶</button>
-        </div>
-        <div class="summary">
-          <div><span class="muted">수입</span><b id="sumIncome" class="good"></b></div>
-          <div><span class="muted">지출</span><b id="sumExpense" class="bad"></b></div>
-          <div><span class="muted">남은 돈</span><b id="sumBalance"></b></div>
-        </div>
-        <ul id="categoryBars" class="bars"></ul>
-      </div>
+      <!-- 공부 -->
+      <section id="studyView" class="view" role="tabpanel" hidden>
+        <div id="goalList"></div>
+        <p id="studyEmpty" class="card empty" hidden>단어장이나 책처럼 끝내고 싶은 공부를 목표로 넣어 보세요.<br>목표일에 맞춰 매일 할 분량과 복습을 알려 드려요.</p>
+        <button id="goalAddToggle" type="button" class="primary wide">+ 새 공부 목표</button>
 
-      <div class="card">
-        <h2>이번 달 내역</h2>
-        <ul id="entryList" class="entry-list"></ul>
-        <p id="entryEmpty" class="empty" hidden>이 달에는 아직 기록이 없어요.</p>
-      </div>
-    </section>
+        <form id="goalForm" class="card goal-form" hidden>
+          <h2>새 공부 목표</h2>
+          <div class="segmented" role="radiogroup" aria-label="종류">
+            <button type="button" data-kind="cards" role="radio">🔤 단어 카드</button>
+            <button type="button" data-kind="amount" role="radio">📘 책·강의 분량</button>
+          </div>
+          <div class="add-row">
+            <input id="goalEmoji" class="emoji-input" maxlength="4" value="📚" aria-label="이모지" />
+            <input id="goalName" maxlength="40" placeholder="목표 이름 예) 토익 보카" aria-label="목표 이름" required />
+          </div>
+          <div id="goalCardsFields" class="field-stack">
+            <textarea id="goalCards" rows="6" placeholder="한 줄에 하나씩: 단어 - 뜻&#10;apple - 사과&#10;abandon - 버리다, 포기하다&#10;(엑셀에서 두 칸을 복사해 붙여 넣어도 돼요)" aria-label="단어 목록"></textarea>
+            <p id="goalCardsCount" class="muted small"></p>
+          </div>
+          <div id="goalAmountFields" class="field-row">
+            <input id="goalTotal" inputmode="numeric" placeholder="전체 분량 예) 320" aria-label="전체 분량" autocomplete="off" />
+            <select id="goalUnit" aria-label="단위"></select>
+          </div>
+          <label class="field-label">언제까지 끝낼까요?<input id="goalDeadline" type="date" required /></label>
+          <label class="field-label">내 수준<select id="goalLevel"></select></label>
+          <p id="goalPreview" class="preview"></p>
+          <div class="button-row">
+            <button type="submit" class="primary">목표 만들기</button>
+            <button id="goalCancel" type="button" class="secondary">취소</button>
+          </div>
+        </form>
 
-    <!-- 일기 -->
-    <section id="diaryView" class="view" role="tabpanel" hidden>
-      <div class="card">
-        <div class="card-head">
-          <h2>오늘의 기분</h2>
-          <span id="diarySaved" class="muted" aria-live="polite"></span>
-        </div>
-        <div id="moodRow" class="mood-row" role="radiogroup" aria-label="기분"></div>
-        <textarea id="diaryText" rows="7" placeholder="오늘 있었던 일, 느낀 점을 몇 줄만 적어 보세요." aria-label="일기"></textarea>
-        <div class="muted small right"><span id="diaryCount">0</span>자</div>
-      </div>
-      <div class="card">
-        <h2 id="diaryMonthLabel"></h2>
-        <ul id="diaryList" class="diary-list"></ul>
-        <p id="diaryEmpty" class="empty" hidden>이 달에 쓴 일기가 없어요.</p>
-      </div>
-    </section>
+        <section id="cardSession" class="card session" hidden aria-live="polite">
+          <div class="card-head">
+            <h2 id="sessionTitle"></h2>
+            <div class="session-tools">
+              <button id="typingToggle" type="button" class="chip" aria-pressed="false" aria-label="직접 쳐서 맞히기">⌨️</button>
+              <button id="sessionClose" type="button" class="icon-btn" aria-label="그만하기">×</button>
+            </div>
+          </div>
+          <div class="progress"><div id="sessionBar" class="progress-bar"></div></div>
+          <p id="sessionCount" class="muted small right"></p>
+          <button id="flashcard" type="button" class="flashcard">
+            <span id="cardFront" class="card-front"></span>
+            <span id="cardBack" class="card-back" hidden></span>
+            <span id="cardHint" class="muted small">눌러서 뜻 보기 (Space)</span>
+          </button>
+          <p id="typeResult" class="type-result" hidden></p>
+          <form id="typeForm" class="type-form" hidden>
+            <input id="typeInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="단어를 쳐 보세요" aria-label="정답 입력" />
+            <button type="submit" class="primary">확인</button>
+          </form>
+          <div id="sessionButtons" class="rate-row"></div>
+        </section>
+      </section>
 
-    <!-- 설정 -->
-    <section id="settingsView" class="view" role="tabpanel" hidden>
-      <div class="card">
-        <h2>백업</h2>
-        <p class="muted">기록은 <b>이 브라우저에만</b> 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 백업 파일을 내려받아 두세요. 다른 기기에서 가져오기로 옮길 수도 있어요.</p>
-        <div class="button-row">
-          <button id="exportButton" type="button" class="primary">백업 내려받기</button>
-          <label class="secondary file-btn">백업 가져오기<input id="importInput" type="file" accept="application/json,.json" hidden /></label>
+      <!-- 가계부 -->
+      <section id="moneyView" class="view" role="tabpanel" hidden>
+        <form id="entryForm" class="card entry-form">
+          <div class="segmented" role="radiogroup" aria-label="종류">
+            <button type="button" data-type="expense" role="radio">지출</button>
+            <button type="button" data-type="income" role="radio">수입</button>
+          </div>
+          <div class="field-row">
+            <input id="entryAmount" inputmode="numeric" placeholder="금액 (원)" aria-label="금액" autocomplete="off" required />
+            <select id="entryCategory" aria-label="분류"></select>
+          </div>
+          <input id="entryMemo" maxlength="100" placeholder="메모 (선택) 예) 점심 김밥" aria-label="메모" autocomplete="off" />
+          <button type="submit" class="primary wide">이 날짜에 기록하기</button>
+        </form>
+
+        <div class="card">
+          <div class="card-head">
+            <button id="prevMonth" type="button" class="icon-btn" aria-label="이전 달"><svg class="ico"><use href="#i-left"/></svg></button>
+            <h2 id="monthLabel"></h2>
+            <button id="nextMonth" type="button" class="icon-btn" aria-label="다음 달"><svg class="ico"><use href="#i-right"/></svg></button>
+          </div>
+          <div class="summary">
+            <div><span class="muted">수입</span><b id="sumIncome" class="good"></b></div>
+            <div><span class="muted">지출</span><b id="sumExpense" class="bad"></b></div>
+            <div><span class="muted">남은 돈</span><b id="sumBalance"></b></div>
+          </div>
+          <ul id="categoryBars" class="bars"></ul>
         </div>
-        <p id="storageInfo" class="muted small"></p>
-      </div>
-      <div class="card danger">
-        <h2>모두 지우기</h2>
-        <p class="muted">습관·가계부·일기를 전부 지워요. 되돌릴 수 없어요.</p>
-        <button id="resetButton" type="button" class="danger-btn">모든 기록 지우기</button>
-      </div>
-    </section>
-  </main>
+
+        <div class="card">
+          <h2>이번 달 내역</h2>
+          <ul id="entryList" class="entry-list"></ul>
+          <p id="entryEmpty" class="empty" hidden>이 달에는 아직 기록이 없어요.</p>
+        </div>
+      </section>
+
+      <!-- 일기 -->
+      <section id="diaryView" class="view" role="tabpanel" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>오늘의 기분</h2>
+            <span id="diarySaved" class="muted" aria-live="polite"></span>
+          </div>
+          <div id="moodRow" class="mood-row" role="radiogroup" aria-label="기분"></div>
+          <textarea id="diaryText" rows="7" placeholder="오늘 있었던 일, 느낀 점을 몇 줄만 적어 보세요." aria-label="일기"></textarea>
+          <div class="muted small right"><span id="diaryCount">0</span>자</div>
+        </div>
+        <div class="card">
+          <h2 id="diaryMonthLabel"></h2>
+          <ul id="diaryList" class="diary-list"></ul>
+          <p id="diaryEmpty" class="empty" hidden>이 달에 쓴 일기가 없어요.</p>
+        </div>
+      </section>
+
+      <!-- 설정 -->
+      <section id="settingsView" class="view" role="tabpanel" hidden>
+        <div class="card">
+          <h2>백업</h2>
+          <p class="muted">기록은 <b>이 브라우저에만</b> 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 백업 파일을 내려받아 두세요. 다른 기기에서 가져오기로 옮길 수도 있어요.</p>
+          <div class="button-row">
+            <button id="exportButton" type="button" class="primary">백업 내려받기</button>
+            <label class="secondary file-btn">백업 가져오기<input id="importInput" type="file" accept="application/json,.json" hidden /></label>
+          </div>
+          <p id="storageInfo" class="muted small"></p>
+        </div>
+        <div class="card danger">
+          <h2>모두 지우기</h2>
+          <p class="muted">습관·공부·가계부·일기를 전부 지워요. 되돌릴 수 없어요.</p>
+          <button id="resetButton" type="button" class="danger-btn">모든 기록 지우기</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 폰: 아래 탭 바 -->
+  <nav class="bottom-nav" aria-label="메뉴">
+    <button type="button" data-tab="today"><svg class="ico"><use href="#i-home"/></svg>오늘</button>
+    <button type="button" data-tab="habits"><svg class="ico"><use href="#i-check"/></svg>습관</button>
+    <button type="button" data-tab="study"><svg class="ico"><use href="#i-book"/></svg>공부</button>
+    <button type="button" data-tab="money"><svg class="ico"><use href="#i-wallet"/></svg>가계부</button>
+    <button type="button" data-tab="diary"><svg class="ico"><use href="#i-edit"/></svg>기록</button>
+  </nav>
 
   <div id="toast" class="toast" role="status" hidden></div>
 

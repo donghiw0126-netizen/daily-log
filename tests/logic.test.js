@@ -287,3 +287,28 @@ test('하루 횟수를 바꿔도 지난날 완료는 남고, 오늘은 새 목�
   assert.deepEqual(L.retarget({ '2026-11-01': { w: 2 } }, WATER, 5, '2026-11-03'), { '2026-11-01': { w: 2 } });
   assert.deepEqual(checks['2026-11-01'], { a: 1 }); // 원본은 그대로
 });
+
+test('이번 주는 월요일부터 일요일까지', () => {
+  assert.deepEqual(L.weekOf('2026-11-03'), ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08']);
+  assert.equal(L.weekOf('2026-11-08')[0], '2026-11-02'); // 일요일
+  assert.equal(L.weekOf('2026-11-09')[0], '2026-11-09'); // 월요일
+});
+
+test('그날 습관 달성률', () => {
+  const habits = [A, WATER];
+  assert.deepEqual(L.habitRate(habits, { '2026-11-03': { a: 1, w: 2 } }, '2026-11-03'), { done: 1, total: 2, pct: 50 });
+  assert.deepEqual(L.habitRate([], {}, '2026-11-03'), { done: 0, total: 0, pct: 0 });
+});
+
+test('기록 연속 일수: 습관·가계부·일기·공부 중 하나라도 기록한 날', () => {
+  const data = L.emptyData();
+  data.checks['2026-11-01'] = { a: 1 };
+  data.entries.push({ id: 'e', date: '2026-11-02', type: 'expense', amount: 1, category: '기타', memo: '' });
+  let g = cardGoal(2);
+  g = L.learnCard(g, g.items[0].id, '2026-10-31');
+  data.goals.push(g);
+  assert.equal(L.recordStreak(data, '2026-11-03'), 3); // 오늘은 아직 → 어제까지 10/31~11/02
+  data.diary['2026-11-03'] = { mood: '🙂', text: '' };
+  assert.equal(L.recordStreak(data, '2026-11-03'), 4);
+  assert.equal(L.recordStreak(data, '2026-11-06'), 0);
+});

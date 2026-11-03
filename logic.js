@@ -139,6 +139,40 @@
     return days;
   }
 
+  // 그날 습관을 몇 개 다 채웠는지 (이번 주 흐름 막대용)
+  function habitRate(habits, checks, date) {
+    const done = habits.filter(h => isDone(checks, date, h)).length;
+    return { done, total: habits.length, pct: habits.length ? Math.round((done / habits.length) * 100) : 0 };
+  }
+
+  // date 가 들어 있는 주의 월요일~일요일
+  function weekOf(date) {
+    const [y, m, d] = date.split('-').map(Number);
+    const monday = addDays(date, -((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7));
+    return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  }
+
+  // ── 기록한 날 ──────────────────────────────────────────
+  // 습관 체크·가계부·일기·공부 중 하나라도 남긴 날
+
+  function activeDates(data) {
+    const dates = new Set([...Object.keys(data.checks), ...Object.keys(data.diary), ...data.entries.map(e => e.date)]);
+    for (const g of data.goals || []) {
+      for (const it of g.items) if (it.learnedOn) dates.add(it.learnedOn);
+      for (const d of Object.keys(g.reviewLog)) dates.add(d);
+    }
+    return dates;
+  }
+
+  // 연속으로 기록한 날 수 (오늘 아직 안 했으면 어제까지)
+  function recordStreak(data, today) {
+    const dates = activeDates(data);
+    let day = dates.has(today) ? today : addDays(today, -1);
+    let count = 0;
+    while (dates.has(day)) { count++; day = addDays(day, -1); }
+    return count;
+  }
+
   // ── 가계부 ─────────────────────────────────────────────
 
   // "12,000" "12000원" 같은 입력을 정수 금액으로. 잘못된 값이면 null.
@@ -462,7 +496,8 @@
   return {
     DATA_VERSION, MAX_TEXT, CATEGORIES, MOODS,
     dateKey, addDays, isValidDate, monthOf, addMonths,
-    MAX_TARGET, checkCount, isDone, tapHabit, undoTap, retarget, streak, recentDays,
+    MAX_TARGET, checkCount, isDone, tapHabit, undoTap, retarget, streak, recentDays, habitRate, weekOf,
+    activeDates, recordStreak,
     parseAmount, formatWon, summarizeMonth, entriesOfMonth,
     REVIEW_INTERVALS, MASTERED, LEVELS, UNITS,
     daysBetween, dailyPlan, reviewItem, applyReview, learnCard, addAmount, adjustFactor, parseCards, gradeTyped, newCard, createGoal,

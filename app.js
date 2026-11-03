@@ -1,5 +1,5 @@
 'use strict';
-// Daily Log 화면 동작: 날짜 이동, 탭, 습관 체크, 가계부, 일기, 백업
+// Daily Log 화면 동작: 날짜 이동, 탭, 오늘(홈), 습관 체크, 공부, 가계부, 일기, 백업
 (function () {
   const L = window.DailyLogLogic;
   const STORAGE_KEY = 'dailylog:data';
@@ -10,12 +10,12 @@
   const tabButtons = [...document.querySelectorAll('[data-tab]')];
   const typeButtons = [...document.querySelectorAll('[data-type]')];
   const kindButtons = [...document.querySelectorAll('[data-kind]')];
-  const views = { habits: $('habitsView'), study: $('studyView'), money: $('moneyView'), diary: $('diaryView'), settings: $('settingsView') };
+  const views = { today: $('todayView'), habits: $('habitsView'), study: $('studyView'), money: $('moneyView'), diary: $('diaryView'), settings: $('settingsView') };
 
   let data = loadData();
   let date = L.dateKey();          // 지금 보고 있는 날짜
   let month = L.monthOf(date);     // 가계부에서 보고 있는 달
-  let tab = 'habits';
+  let tab = 'today';
   let entryType = 'expense';
   let editingHabits = false;
   let diaryTimer = null;
@@ -80,20 +80,237 @@
     render();
   }
 
+  // 화면마다 위쪽 제목: [앞, 강조, 설명]
+  const PAGES = {
+    today: ['오늘도, ', '나의 속도로', '작은 기록이 모여 나다운 하루가 돼요.'],
+    habits: ['매일 조금씩, ', '꾸준히', '작은 습관이 쌓이면 큰 변화가 돼요.'],
+    study: ['오늘 할 만큼, ', '차근차근', '목표일에 맞춰 매일 할 분량과 복습을 알려 드려요.'],
+    money: ['오늘 쓴 돈, ', '한눈에', '적어 두기만 해도 씀씀이가 보여요.'],
+    diary: ['하루를 ', '한 줄로', '오늘은 어떤 하루였나요? 몇 줄이면 충분해요.'],
+    settings: ['', '설정', '기록은 이 브라우저에만 저장돼요.'],
+  };
+  const DATED_TABS = ['habits', 'money', 'diary']; // 지난 날짜로 옮겨 볼 수 있는 화면
+
+  function longDate(d) {
+    const [y, m, day] = d.split('-').map(Number);
+    return `${y}년 ${m}월 ${day}일 ${WEEKDAYS[new Date(Date.UTC(y, m - 1, day)).getUTCDay()]}요일`;
+  }
+
   function renderHeader() {
     const today = L.dateKey();
-    // 공부는 언제나 진짜 오늘 기준이라 날짜 이동을 숨깁니다.
-    const shown = tab === 'study' ? today : date;
-    $('dateLabel').textContent = shown === today ? `오늘 · ${formatDate(shown)}` : formatDate(shown, true);
+    // 오늘·공부·설정은 언제나 진짜 오늘 기준이라 날짜 이동을 숨깁니다.
+    const dated = DATED_TABS.includes(tab);
+    const shown = dated ? date : today;
+    $('dateLabel').textContent = longDate(shown);
     $('todayButton').hidden = shown === today;
-    $('prevDay').hidden = $('nextDay').hidden = tab === 'study';
+    $('prevDay').hidden = $('nextDay').hidden = !dated;
     $('nextDay').disabled = date >= today; // 미래 기록은 막습니다
+    const [before, marked, sub] = PAGES[tab];
+    $('pageTitle').replaceChildren(before, el('mark', '', marked));
+    $('pageSub').textContent = sub;
+    renderStreak(today);
     for (const b of tabButtons) {
       const on = b.dataset.tab === tab;
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', String(on));
     }
     for (const [id, view] of Object.entries(views)) view.hidden = id !== tab;
+  }
+
+  // 사이드바: 며칠째 기록 중인지
+  function renderStreak(today) {
+    $('recordStreak').textContent = String(L.recordStreak(data, today));
+    const active = L.activeDates(data);
+    $('recordDots').replaceChildren(...Array.from({ length: 7 }, (_, i) => {
+      const d = L.addDays(today, i - 6);
+      const dot = el('i', active.has(d) ? 'on' : '');
+      dot.title = `${formatDate(d)} ${active.has(d) ? '기록함' : '기록 없음'}`;
+      return dot;
+    }));
+  }
+
+  // 다른 화면으로 옮겨 가기 (오늘 화면의 버튼들은 언제나 오늘 날짜로)
+  function goTo(next, d = L.dateKey()) {
+    flushDiary();
+    date = d;
+    month = L.monthOf(d);
+    setTab(next);
+    window.scrollTo(0, 0);
+  }
+
+  // ── 오늘 (홈) ──────────────────────────────────────────
+  const MOOD_WORDS = { '😄': '신나요', '🙂': '좋아요', '😐': '그저 그래요', '😔': '지쳤어요', '😢': '슬퍼요' };
+  const CATEGORY_ICONS = {
+    식비: 'utensils', '카페·간식': 'cup', 교통: 'bus', 쇼핑: 'bag', 생활: 'home', '문화·여가': 'ticket',
+    의료: 'heart', 교육: 'book', 월급: 'coin', 용돈: 'coin', 부수입: 'coin',
+  };
+  let todayGoalId = null; // 오늘 화면 공부 카드에서 고른 목표
+
+  function icon(name) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'ico');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(NS, 'use');
+    use.setAttribute('href', `#i-${name}`);
+    svg.append(use);
+    return svg;
+  }
+
+  function renderToday() {
+    const today = L.dateKey();
+    const rate = L.habitRate(data.habits, data.checks, today);
+    const plans = data.goals.map(g => ({ g, p: L.dailyPlan(g, today) })).filter(({ p }) => !p.complete || p.reviewsDue > 0);
+    const spent = data.entries.filter(e => e.date === today && e.type === 'expense');
+    const diary = data.diary[today];
+
+    // 요약 카드
+    $('statHabits').textContent = data.habits.length ? `${rate.done} / ${rate.total}` : '—';
+    $('statStudy').textContent = plans.length ? `${plans.filter(r => r.p.todayDone).length} / ${plans.length} 목표` : '—';
+    $('statMoney').textContent = L.formatWon(spent.reduce((n, e) => n + e.amount, 0));
+    $('statMood').textContent = diary && diary.mood ? `${diary.mood} ${MOOD_WORDS[diary.mood]}` : '아직이에요';
+
+    renderTodayHabits(today, rate);
+    renderTodayStudy(today, plans);
+    renderWeek(today);
+    renderTodayMoney(spent);
+    renderTodayLine(today, diary);
+  }
+
+  function renderTodayHabits(today, rate) {
+    $('todayHabitPct').textContent = data.habits.length ? `${rate.pct}%` : '';
+    $('todayHabitBar').style.width = `${rate.pct}%`;
+    $('todayHabitEmpty').hidden = data.habits.length > 0;
+    $('todayHabitList').replaceChildren(...data.habits.map(h => {
+      const target = h.target || 1;
+      const count = L.checkCount(data.checks, today, h.id);
+      const done = count >= target;
+      const li = el('li', done ? 'done' : '');
+      const b = el('button', 'today-habit');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(done));
+      b.append(el('span', `tick${done ? ' on' : count ? ' part' : ''}`, done ? '✓' : count ? String(count) : ''),
+        el('span', 'today-habit-name', `${h.emoji} ${h.name}`));
+      if (target > 1) b.append(el('span', 'today-habit-count', countLabel(count, target, h.unit)));
+      b.addEventListener('click', () => {
+        if (target > 1 && done) { toast(`오늘 ${timesLabel(target, h.unit)} 다 채웠어요! 취소는 습관 화면의 − 로 할 수 있어요.`); return; }
+        data.checks = L.tapHabit(data.checks, today, h);
+        saveData();
+        render();
+      });
+      li.append(b);
+      return li;
+    }));
+  }
+
+  function renderTodayStudy(today, plans) {
+    const box = $('todayStudy');
+    box.replaceChildren();
+    if (!data.goals.length) {
+      box.append(el('p', 'empty', '단어장이나 책을 목표로 넣으면 오늘 할 분량이 여기에 나와요.'),
+        button('공부 목표 만들기 ›', 'link-btn', () => goTo('study')));
+      return;
+    }
+    // 오늘 할 일이 남은 목표를 먼저 보여 줍니다.
+    if (!findGoal(todayGoalId)) {
+      const pending = plans.find(r => !r.p.todayDone) || plans[0];
+      todayGoalId = (pending ? pending.g : data.goals[0]).id;
+    }
+    const chips = el('div', 'chip-tabs');
+    for (const g of data.goals) {
+      const c = button(g.name, `chip-tab${g.id === todayGoalId ? ' active' : ''}`, () => { todayGoalId = g.id; renderToday(); });
+      c.setAttribute('aria-pressed', String(g.id === todayGoalId));
+      chips.append(c);
+    }
+    const g = findGoal(todayGoalId);
+    const p = L.dailyPlan(g, today);
+    const panel = el('div', 'study-panel');
+    const info = el('div', 'study-info');
+    if (p.complete && !p.reviewsDue) {
+      info.append(el('b', '', '🎉 다 끝냈어요'), el('small', '', `${qty(g, p.total)} 전부 공부했어요`));
+    } else {
+      info.append(el('b', '', p.newLeft ? `새로 ${qty(g, p.newLeft)}` : p.reviewsDue ? `복습 ${p.reviewsDue}개` : '오늘 분량 끝! ✓'));
+      const sub = [];
+      if (p.newLeft && p.reviewsDue) sub.push(`복습 ${p.reviewsDue}개`);
+      sub.push(`${qty(g, p.learnedAll)} / ${qty(g, p.total)}`, `목표일 ${formatDate(g.deadline)}`);
+      info.append(el('small', '', sub.join(' · ')));
+    }
+    let action;
+    const start = (mode, count) => { goTo('study'); startSession(g.id, mode, count); };
+    if (g.kind === 'cards' && p.reviewsDue) action = button('복습 시작', 'primary play', () => start('review'));
+    else if (g.kind === 'cards' && p.newLeft) action = button('외우기 시작', 'primary play', () => start('new', p.newLeft));
+    else if (p.todayDone) action = button('더 하기', 'secondary', () => goTo('study'));
+    else action = button('공부하러 가기', 'primary play', () => goTo('study'));
+    if (action.classList.contains('play')) action.prepend(icon('play'));
+    panel.append(info, action);
+    box.append(chips, panel);
+  }
+
+  function renderWeek(today) {
+    const chart = $('weekChart');
+    chart.replaceChildren();
+    for (const d of L.weekOf(today)) {
+      const future = d > today;
+      const r = L.habitRate(data.habits, data.checks, d);
+      const [y, m, day] = d.split('-').map(Number);
+      const col = button('', `week-col${d === today ? ' today' : ''}`, () => goTo('habits', d));
+      col.disabled = future;
+      col.setAttribute('role', 'listitem');
+      col.setAttribute('aria-label', `${formatDate(d)} ${future ? '아직' : `습관 ${r.pct}%`}`);
+      const track = el('span', 'week-track');
+      const fill = el('span', 'week-fill');
+      fill.style.height = future ? '0' : `${r.pct}%`;
+      track.append(fill);
+      col.append(track, el('span', 'week-day', WEEKDAYS[new Date(Date.UTC(y, m - 1, day)).getUTCDay()]),
+        el('span', 'week-pct', future || !data.habits.length ? '·' : `${r.pct}%`));
+      chart.append(col);
+    }
+  }
+
+  function renderTodayMoney(spent) {
+    const list = $('todayMoney');
+    list.replaceChildren();
+    $('todayMoneyEmpty').hidden = spent.length > 0;
+    const shown = spent.slice(-4).reverse(); // 최근에 적은 것부터
+    for (const e of shown) {
+      const li = el('li');
+      const ico = el('span', 'money-icon');
+      ico.append(icon(CATEGORY_ICONS[e.category] || 'dots'));
+      li.append(ico, el('span', 'money-name', e.memo || e.category), el('span', 'money-amount', L.formatWon(e.amount)));
+      list.append(li);
+    }
+    if (spent.length > shown.length) {
+      const li = el('li', 'more');
+      li.append(button(`외 ${spent.length - shown.length}건 더 보기 ›`, 'link-btn inline', () => goTo('money')));
+      list.append(li);
+    }
+  }
+
+  function renderTodayLine(today, diary) {
+    const row = $('todayMoods');
+    row.replaceChildren();
+    for (const mood of L.MOODS) {
+      const on = Boolean(diary && diary.mood === mood);
+      const b = el('button', `mood${on ? ' active' : ''}`, mood);
+      b.type = 'button';
+      b.title = MOOD_WORDS[mood];
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(on));
+      b.setAttribute('aria-label', MOOD_WORDS[mood]);
+      b.addEventListener('click', () => {
+        flushDiary();
+        const cur = data.diary[today] || { mood: '', text: '' };
+        const next = { ...cur, mood: cur.mood === mood ? '' : mood };
+        if (next.text.trim() || next.mood) data.diary[today] = next;
+        else delete data.diary[today];
+        saveData();
+        render();
+      });
+      row.append(b);
+    }
+    const line = diary && diary.text.trim() ? diary.text.trim().split('\n')[0] : '';
+    $('todayLineText').textContent = line || '오늘은 어떤 하루였나요?';
+    $('todayLineText').classList.toggle('placeholder', !line);
   }
 
   // ── 습관 ───────────────────────────────────────────────
@@ -901,7 +1118,8 @@
   function render() {
     refreshGoals();
     renderHeader();
-    if (tab === 'habits') renderHabits();
+    if (tab === 'today') renderToday();
+    else if (tab === 'habits') renderHabits();
     else if (tab === 'study') renderStudy();
     else if (tab === 'money') renderMoney();
     else if (tab === 'diary') renderDiary();
@@ -911,7 +1129,34 @@
   $('prevDay').addEventListener('click', () => setDate(L.addDays(date, -1)));
   $('nextDay').addEventListener('click', () => { if (date < L.dateKey()) setDate(L.addDays(date, 1)); });
   $('todayButton').addEventListener('click', () => setDate(L.dateKey()));
-  for (const b of tabButtons) b.addEventListener('click', () => setTab(b.dataset.tab));
+  for (const b of tabButtons) b.addEventListener('click', () => { closeQuick(); setTab(b.dataset.tab); window.scrollTo(0, 0); });
+
+  // 오늘 화면의 카드·버튼에서 각 화면으로 (data-go="화면")
+  document.addEventListener('click', e => {
+    const go = e.target.closest('[data-go]');
+    if (go) goTo(go.dataset.go);
+  });
+
+  // "+ 기록하기": 자주 쓰는 기록으로 바로 가기
+  function closeQuick() {
+    $('quickMenu').hidden = true;
+    $('quickButton').setAttribute('aria-expanded', 'false');
+  }
+  $('quickButton').addEventListener('click', e => {
+    e.stopPropagation();
+    const open = $('quickMenu').hidden;
+    $('quickMenu').hidden = !open;
+    $('quickButton').setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('.quick')) closeQuick(); });
+  for (const b of document.querySelectorAll('[data-quick]')) {
+    b.addEventListener('click', () => {
+      closeQuick();
+      goTo(b.dataset.quick);
+      if (b.dataset.quick === 'money') { entryType = 'expense'; renderEntryType(); $('entryAmount').focus(); }
+      if (b.dataset.quick === 'diary') $('diaryText').focus();
+    });
+  }
 
   // 다른 탭(브라우저 창)에서 바꾼 내용을 반영합니다.
   window.addEventListener('storage', e => {
