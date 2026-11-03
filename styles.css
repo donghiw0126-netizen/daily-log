@@ -606,7 +606,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   .page-head { display: block; min-height: 0; margin-bottom: 16px; }
   .page-head h1 { font-size: clamp(26px, 7.4vw, 34px); }
   .page-sub { font-size: 15px; margin-top: 6px; }
-  .hero-art { right: -26px; top: 6px; width: 220px; height: 110px; opacity: .95; }
+  /* 폰에서는 그림을 작고 옅게: 제목·설명 글을 가리지 않게 */
+  .hero-art { right: -34px; top: 30px; width: 180px; height: 90px; opacity: .45; }
   .page-text { max-width: 74%; }
   .quick { display: none; }
 
