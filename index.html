@@ -4,10 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#f6f2ea" />
+  <!-- 배포할 때 __VERSION__ 이 커밋 번호로 바뀝니다 (파일 주소의 ?v= 와 오프라인 저장 버전) -->
+  <meta name="app-version" content="__VERSION__" />
+  <!-- 앱처럼 설치(PWA): 앱 이름·아이콘 정보, 아이폰 홈 화면용 설정 -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Daily Log" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="description" content="매일 할 일 체크, 공부 계획·복습, 가계부, 한 줄 일기를 한곳에. 기록은 내 기기에만 저장돼요." />
   <title>Daily Log | 나를 쌓는 작은 기록</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="./styles.css?v=0.6.0" />
+  <link rel="stylesheet" href="./styles.css?v=__VERSION__" />
 </head>
 <body>
   <!-- 선 아이콘 모음 (아래에서 <use href="#i-이름"> 으로 꺼내 씁니다) -->
@@ -330,6 +339,14 @@
 
       <!-- 설정 -->
       <section id="settingsView" class="view" role="tabpanel" hidden>
+        <div class="card install-card">
+          <img src="./icon-192.png" alt="" width="52" height="52" />
+          <div class="install-text">
+            <h2>📲 앱처럼 설치하기</h2>
+            <p id="installHelp" class="muted"></p>
+            <button id="installButton" type="button" class="primary" hidden>설치하기</button>
+          </div>
+        </div>
         <div class="card">
           <h2>백업</h2>
           <p class="muted">기록은 <b>이 브라우저에만</b> 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 백업 파일을 내려받아 두세요. 다른 기기에서 가져오기로 옮길 수도 있어요.</p>
@@ -359,7 +376,7 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script src="./logic.js?v=0.6.0"></script>
-  <script src="./app.js?v=0.6.0"></script>
+  <script src="./logic.js?v=__VERSION__"></script>
+  <script src="./app.js?v=__VERSION__"></script>
 </body>
 </html>

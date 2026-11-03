@@ -36,10 +36,15 @@ jobs:
 
       - uses: actions/configure-pages@v6
 
-      - name: 앱 파일만 모으기 (tests 폴더 등은 공개하지 않음)
+      - name: 앱 파일만 모으기 (tests 폴더·백업 파일 등은 공개하지 않음)
         run: |
           mkdir _site
-          cp index.html styles.css logic.js app.js _site/
+          cp index.html styles.css logic.js app.js sw.js manifest.webmanifest \
+             icon.svg icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png _site/
+          # 캐시 갱신용 버전(커밋 번호 앞 7자리)을 채워 넣습니다.
+          # sw.js 의 버전도 바뀌어야 설치한 앱이 새 버전으로 자동 업데이트됩니다.
+          sed -i "s#__VERSION__#${GITHUB_SHA::7}#g" _site/index.html _site/sw.js
+          if grep -q "__VERSION__" _site/index.html _site/sw.js; then echo "치환되지 않은 값이 남아 있어요" && exit 1; fi
 
       - uses: actions/upload-pages-artifact@v5
 

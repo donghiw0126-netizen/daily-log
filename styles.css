@@ -533,10 +533,19 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .shop-toggle .check.on { background: var(--accent); border-color: var(--accent); }
 .shop-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .shop-cat { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--field); color: var(--muted); font-size: 11px; text-decoration: none; display: inline-block; vertical-align: 1px; }
-.shop-price { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.shop-price { flex: none; border: 0; background: none; padding: 6px 8px; border-radius: 10px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.shop-price:hover { background: var(--accent-softer); color: var(--text); }
+.shop-price.empty { font-weight: 500; font-size: 13px; color: var(--faint); text-decoration: underline dotted; }
 .shop-item.done .shop-name { color: var(--faint); text-decoration: line-through; }
 .shop-item.done .shop-price { color: var(--faint); }
 .shop-item .icon-btn { min-width: 30px; height: 30px; color: var(--faint); }
+
+/* ── 설정 ─────────────────────────────────────── */
+.install-card { display: flex; align-items: flex-start; gap: 14px; }
+.install-card img { flex: none; border-radius: 14px; }
+.install-text { flex: 1; min-width: 0; }
+.install-text h2 { margin-bottom: 4px; }
+.install-text p { margin: 0 0 10px; }
 
 /* ── 일기·기분 ─────────────────────────────────── */
 .mood-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 14px; }

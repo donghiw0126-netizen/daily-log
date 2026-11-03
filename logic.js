@@ -417,6 +417,24 @@
     };
   }
 
+  // 가격 고치기: 이미 산 품목이면 가계부 기록도 함께 맞춥니다.
+  // 기록이 있으면 금액을 바꾸고(가격을 지우면 기록도 지움), 없던 기록은 date 에 새로 적습니다.
+  function repriceShopItem(data, itemId, price, date, entryId) {
+    const it = data.shopping.find(x => x.id === itemId);
+    if (!it) return data;
+    const amount = parseAmount(price) || 0;
+    if (!it.bought) return { ...data, shopping: data.shopping.map(x => (x.id === itemId ? { ...x, price: amount } : x)) };
+    const bought = buyShopItem(unbuyShopItem(data, itemId), itemId, date, entryId, String(amount || ''));
+    const old = it.entryId && data.entries.find(e => e.id === it.entryId);
+    if (!old || !amount) return bought;
+    // 원래 기록은 그 날짜·순서 그대로 두고 금액만 바꿉니다.
+    return {
+      ...bought,
+      shopping: bought.shopping.map(x => (x.id === itemId ? { ...x, entryId: old.id } : x)),
+      entries: data.entries.map(e => (e.id === old.id ? { ...e, amount } : e)),
+    };
+  }
+
   // ── 데이터 전체 (저장·백업 가져오기) ───────────────────
 
   function emptyData() {
@@ -569,7 +587,7 @@
     MAX_TARGET, checkCount, isDone, tapHabit, undoTap, retarget, streak, recentDays, habitRate, weekOf,
     activeDates, recordStreak,
     parseAmount, formatWon, summarizeMonth, entriesOfMonth,
-    SHOP_CATEGORY, NO_STORE, addShopItem, shopGroups, buyShopItem, unbuyShopItem,
+    SHOP_CATEGORY, NO_STORE, addShopItem, shopGroups, buyShopItem, unbuyShopItem, repriceShopItem,
     REVIEW_INTERVALS, MASTERED, LEVELS, UNITS,
     daysBetween, dailyPlan, reviewItem, applyReview, learnCard, addAmount, adjustFactor, parseCards, gradeTyped, newCard, createGoal,
     emptyData, newId, normalizeData,

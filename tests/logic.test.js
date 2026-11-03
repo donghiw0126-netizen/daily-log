@@ -371,3 +371,32 @@ test('쇼핑 리스트 백업: 예전 백업도 읽히고, 잘못된 항목과 �
   assert.deepEqual(back.shopping[1], { id: 's3', store: L.NO_STORE, name: '우유', category: '쇼핑', price: 0, bought: false, entryId: '' });
   assert.equal(back.shopping.length, 2);
 });
+
+test('쇼핑 가격 고치기: 산 품목이면 가계부 금액도 바꾸고, 지우면 기록도 지운다', () => {
+  let data = L.emptyData();
+  data.shopping = L.addShopItem([], { store: '이마트', name: '토마토', category: '식비', price: '5000' }, 's1');
+  data.shopping = L.addShopItem(data.shopping, { store: '이마트', name: '쌀' }, 's2');
+  data.entries.push({ id: 'other', date: '2026-11-01', type: 'expense', amount: 1000, category: '교통', memo: '' });
+
+  // 아직 안 산 것: 가격만 바뀐다
+  let next = L.repriceShopItem(data, 's2', '32,000', TODAY, 'x');
+  assert.equal(next.shopping[1].price, 32000);
+  assert.equal(next.entries, data.entries);
+
+  // 산 것: 원래 기록(날짜·자리)은 그대로 금액만
+  data = L.buyShopItem(data, 's1', '2026-11-02', 'e1');
+  next = L.repriceShopItem(data, 's1', '4,500', TODAY, 'e9');
+  assert.deepEqual(next.entries.map(e => [e.id, e.date, e.amount]), [['other', '2026-11-01', 1000], ['e1', '2026-11-02', 4500]]);
+  assert.equal(next.shopping[0].price, 4500);
+  assert.equal(next.shopping[0].entryId, 'e1');
+
+  // 가격을 지우면 기록도 지우고, 체크는 남는다
+  const cleared = L.repriceShopItem(next, 's1', '', TODAY, 'e9');
+  assert.deepEqual(cleared.entries.map(e => e.id), ['other']);
+  assert.deepEqual([cleared.shopping[0].bought, cleared.shopping[0].price, cleared.shopping[0].entryId], [true, 0, '']);
+
+  // 기록 없이 산 것에 가격을 넣으면 그 날짜에 새로 적는다
+  const added = L.repriceShopItem(cleared, 's1', '3000', TODAY, 'e2');
+  assert.deepEqual(added.entries.at(-1), { id: 'e2', date: TODAY, type: 'expense', amount: 3000, category: '식비', memo: '이마트 토마토' });
+  assert.equal(added.shopping[0].entryId, 'e2');
+});

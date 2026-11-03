@@ -994,9 +994,10 @@
         toggle.setAttribute('aria-pressed', String(it.bought));
         const name = el('span', 'shop-name', it.name);
         name.append(el('small', 'shop-cat', it.category));
-        toggle.append(el('span', `check${it.bought ? ' on' : ''}`, it.bought ? '✓' : ''), name,
-          el('span', 'shop-price', it.price ? L.formatWon(it.price) : ''));
+        toggle.append(el('span', `check${it.bought ? ' on' : ''}`, it.bought ? '✓' : ''), name);
         toggle.addEventListener('click', () => toggleShopItem(it));
+        const price = button(it.price ? L.formatWon(it.price) : '가격', `shop-price${it.price ? '' : ' empty'}`, () => editShopPrice(it));
+        price.setAttribute('aria-label', `${it.name} 가격 ${it.price ? L.formatWon(it.price) : '없음'}, 눌러서 고치기`);
         const del = el('button', 'icon-btn', '×');
         del.type = 'button';
         del.setAttribute('aria-label', `${it.name} 지우기`);
@@ -1005,7 +1006,7 @@
           saveData();
           renderShopping();
         });
-        li.append(toggle, del);
+        li.append(toggle, price, del);
         ul.append(li);
       }
       box.append(head, ul);
@@ -1037,6 +1038,22 @@
   // 분류 고르기: 가계부 지출 분류와 같고, 장보기가 대부분이라 처음엔 식비
   $('shopCategory').replaceChildren(...L.CATEGORIES.expense.map(c => el('option', '', c)));
   $('shopCategory').value = '식비';
+
+  function editShopPrice(it) {
+    const linked = it.bought && it.entryId;
+    const answer = prompt(`${it.name} 가격을 적어 주세요.${linked ? '\n가계부 기록도 함께 바뀌어요. 비우면 기록을 지워요.' : ''}`,
+      it.price ? String(it.price) : '');
+    if (answer === null) return; // 취소
+    if (answer.trim() && L.parseAmount(answer) === null) { toast('가격을 숫자로 적어 주세요.'); return; }
+    data = L.repriceShopItem(data, it.id, answer, date, L.newId());
+    const now = data.shopping.find(x => x.id === it.id);
+    if (linked && now.entryId) toast(`가계부 기록도 ${L.formatWon(now.price)}으로 바꿨어요.`);
+    else if (now.entryId) toast(`${formatDate(date)} 가계부에 ${L.formatWon(now.price)} 적었어요.`);
+    else if (linked) toast('가격을 지워서 가계부 기록도 지웠어요.');
+    else toast(now.price ? `${it.name} ${L.formatWon(now.price)}` : '가격을 지웠어요.');
+    saveData();
+    render();
+  }
 
   $('shopPrice').addEventListener('input', e => {
     const digits = e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 13);
@@ -1195,7 +1212,7 @@
     let imported;
     try { imported = L.normalizeData(JSON.parse(await file.text())); }
     catch (err) { toast(err instanceof SyntaxError ? '파일을 읽을 수 없어요.' : err.message); return; }
-    const summary = `습관 ${imported.habits.length}개, 공부 목표 ${imported.goals.length}개, 가계부 ${imported.entries.length}건, 일기 ${Object.keys(imported.diary).length}편`;
+    const summary = `습관 ${imported.habits.length}개, 공부 목표 ${imported.goals.length}개, 가계부 ${imported.entries.length}건, 쇼핑 ${imported.shopping.length}개, 일기 ${Object.keys(imported.diary).length}편`;
     if (!confirm(`백업(${summary})으로 지금 기록을 바꿀까요?\n지금 기록은 사라져요.`)) return;
     data = imported;
     saveData();
@@ -1214,6 +1231,48 @@
     toast('모든 기록을 지웠어요.');
   });
 
+  // ── 설정: 앱처럼 설치하기 (PWA) ────────────────────────
+  // 배포된 버전인가? (배포할 때 app-version 의 __VERSION__ 이 커밋 번호로 바뀝니다)
+  // 개발 중에 서비스 워커가 켜지면 고친 코드 대신 저장된 옛 파일이 보여 헷갈리므로, 배포 버전에서만 켭니다.
+  function isDeployedBuild() {
+    const meta = document.querySelector('meta[name="app-version"]');
+    return Boolean(meta && meta.content && !meta.content.startsWith('__'));
+  }
+  const isInstalledApp = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // 데스크톱 모드 아이패드
+
+  let installPrompt = null; // 크롬·엣지·안드로이드가 넘겨주는 "설치 창 띄우기" 객체
+
+  function renderInstall() {
+    const help = $('installHelp');
+    $('installButton').hidden = !installPrompt || isInstalledApp();
+    if (isInstalledApp()) help.textContent = '설치된 앱으로 열었어요 ✓ 인터넷이 없어도 열려요.';
+    else if (installPrompt) help.textContent = '홈 화면에 아이콘이 생기고, 인터넷이 없어도 열려요.';
+    else if (isIOS()) {
+      help.textContent = '사파리 아래쪽 공유 버튼(□↑) → "홈 화면에 추가"를 눌러 주세요. '
+        + '아이폰은 설치한 앱과 사파리의 기록이 따로 저장돼요. 사파리에서 쓰던 기록은 백업 내려받기 → 앱에서 가져오기로 옮겨 주세요.';
+    } else help.textContent = '브라우저 메뉴(⋮)에서 "앱 설치" 또는 "홈 화면에 추가"를 눌러 주세요.';
+  }
+
+  $('installButton').addEventListener('click', async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    renderInstall();
+  });
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); // 브라우저 기본 안내 대신 설정의 설치 버튼으로
+    installPrompt = e;
+    renderInstall();
+  });
+  window.addEventListener('appinstalled', () => { installPrompt = null; renderInstall(); toast('설치했어요! 홈 화면에서 열어 보세요.'); });
+
+  if ('serviceWorker' in navigator && isDeployedBuild()) {
+    navigator.serviceWorker.register('./sw.js').catch(err => console.warn('오프라인 기능을 켜지 못했어요.', err));
+  }
+
   // ── 시작 ───────────────────────────────────────────────
   function render() {
     refreshGoals();
@@ -1223,7 +1282,7 @@
     else if (tab === 'study') renderStudy();
     else if (tab === 'money') renderMoney();
     else if (tab === 'diary') renderDiary();
-    else renderSettings();
+    else { renderSettings(); renderInstall(); }
   }
 
   $('prevDay').addEventListener('click', () => setDate(L.addDays(date, -1)));
