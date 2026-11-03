@@ -78,7 +78,7 @@ h2 { margin: 0; font-size: 17px; }
   top: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 4px;
   margin-bottom: 16px;
@@ -92,7 +92,7 @@ h2 { margin: 0; font-size: 17px; }
   border-radius: 10px;
   background: transparent;
   padding: 10px 0;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -178,6 +178,53 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .add-row { display: flex; gap: 8px; }
 .emoji-input { flex: 0 0 56px; text-align: center; padding-inline: 4px; }
 
+/* ── 공부 ─────────────────────────────────────── */
+.study-row .habit-meta { font-size: 13px; color: var(--accent); }
+.study-row.done .habit-meta { color: var(--faint); }
+.goal h2 { overflow-wrap: anywhere; }
+.goal-stats { margin: 0 0 10px; }
+.goal-today p { margin: 0 0 8px; font-weight: 600; font-size: 15px; }
+.warn { color: #ffcf7a; background: #3a2c14; border-radius: 10px; padding: 10px 12px; }
+.link-btn.inline { display: inline; margin: 0; padding: 4px; flex: none; }
+.goal-form { display: grid; gap: 10px; }
+.goal-form h2 { margin: 0; }
+.field-stack { display: grid; gap: 8px; }
+.field-stack p { margin: 0; }
+.field-label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.preview { margin: 0; color: var(--accent); font-size: 14px; font-weight: 600; }
+.preview:empty { display: none; }
+.amount-actions { display: grid; gap: 8px; margin-top: 6px; }
+.amount-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.amount-form input { width: 90px; flex: none; }
+.review-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.review-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--field); }
+.review-range { font-size: 14px; }
+.rate-mini { display: flex; gap: 4px; }
+.rate { border: 1px solid var(--card-border); border-radius: 9px; background: transparent; padding: 7px 10px; font-weight: 700; font-size: 14px; }
+.rate.again { color: var(--bad); }
+.rate.hard { color: #ffcf7a; }
+.rate.good { color: var(--good); }
+.goal-editor { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #1f2b3e; }
+.goal-editor .danger-btn { justify-self: start; }
+
+.flashcard {
+  width: 100%;
+  min-height: 200px;
+  display: grid;
+  place-content: center;
+  gap: 14px;
+  margin: 4px 0 14px;
+  border: 1px solid var(--field-border);
+  border-radius: 16px;
+  background: var(--field);
+  padding: 24px 16px;
+  text-align: center;
+}
+.card-front { font-size: clamp(26px, 8vw, 36px); font-weight: 800; overflow-wrap: anywhere; }
+.card-back { font-size: 20px; color: var(--accent); overflow-wrap: anywhere; }
+.rate-row { display: flex; gap: 8px; }
+.rate-row button { flex: 1; padding-block: 13px; }
+
 /* ── 가계부 ───────────────────────────────────── */
 .entry-form { display: grid; gap: 10px; }
 .segmented { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: var(--field); }
@@ -258,7 +305,35 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   z-index: 10;
 }
 
-@media (max-width: 380px) {
+@media (max-width: 400px) {
   .tabs button { font-size: 12px; }
   .field-row { grid-template-columns: 1fr; }
 }
+
+/* ── 직접 쳐서 맞히기 ─────────────────────────── */
+.session-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.chip[aria-pressed='false'] { border-color: var(--card-border); color: var(--muted); }
+.chip[aria-pressed='true'] { background: var(--accent-dark); }
+.type-form { display: flex; gap: 8px; margin-bottom: 10px; }
+.type-result { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; text-align: center; font-weight: 700; overflow-wrap: anywhere; }
+.type-result.good { background: var(--accent-dark); }
+.type-result.hard { background: #3a2c14; color: #ffcf7a; }
+.type-result.again { background: #3d1820; }
+.type-result small { display: block; margin-top: 4px; font-weight: 400; color: var(--muted); }
+.link-btn.override { margin: 8px auto 0; font-size: 13px; }
+.session h2 { word-break: keep-all; }
+
+/* ── 하루 여러 번 하는 습관 ───────────────────── */
+.habit-form { display: grid; gap: 8px; }
+.form-hint { margin: 0; }
+.target-label { display: flex; align-items: center; gap: 6px; flex: none; font-size: 14px; color: var(--muted); }
+.target-label input { width: 64px; text-align: center; }
+.habit-unit-input { flex: 1; }
+.check.partial { border-color: var(--accent); color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: -.02em; }
+.pips { display: flex; gap: 3px; margin-left: 2px; }
+.pips i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--accent); }
+.pips i.on { background: var(--accent); }
+.habit-count { font-size: 13px; color: var(--accent); font-weight: 700; white-space: nowrap; }
+.habit.done .habit-count { color: var(--faint); }
+.week i.part { background: linear-gradient(to top, var(--accent) 50%, var(--field-border) 50%); }
+.undo-btn { min-width: 32px; height: 32px; font-size: 18px; line-height: 1; }

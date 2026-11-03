@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
-  <meta name="description" content="매일 할 일 체크, 가계부, 한 줄 일기를 한곳에. 기록은 내 기기에만 저장돼요." />
+  <meta name="description" content="매일 할 일 체크, 공부 계획·복습, 가계부, 한 줄 일기를 한곳에. 기록은 내 기기에만 저장돼요." />
   <title>Daily Log | 오늘의 기록</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -12,7 +12,7 @@
   <main class="app">
     <header class="topbar">
       <div class="brand"><span class="brand-icon" aria-hidden="true">✓</span> DAILY LOG</div>
-      <div class="date-nav">
+      <div id="dateNav" class="date-nav">
         <button id="prevDay" type="button" class="icon-btn" aria-label="전날">◀</button>
         <span id="dateLabel" class="date-label"></span>
         <button id="nextDay" type="button" class="icon-btn" aria-label="다음 날">▶</button>
@@ -22,6 +22,7 @@
 
     <nav class="tabs" role="tablist" aria-label="기능">
       <button type="button" role="tab" data-tab="habits">✅ 습관</button>
+      <button type="button" role="tab" data-tab="study">📖 공부</button>
       <button type="button" role="tab" data-tab="money">💰 가계부</button>
       <button type="button" role="tab" data-tab="diary">📔 일기</button>
       <button type="button" role="tab" data-tab="settings">⚙️ 설정</button>
@@ -38,12 +39,76 @@
         <ul id="habitList" class="habit-list"></ul>
         <p id="habitEmpty" class="empty" hidden>아직 습관이 없어요. 아래에서 첫 습관을 추가해 보세요.<br>예) 💧 물 2L 마시기, 🏃 30분 운동, 📚 영어 단어 20개</p>
       </div>
-      <form id="habitForm" class="card add-row">
-        <input id="habitEmoji" class="emoji-input" maxlength="4" value="✅" aria-label="이모지" />
-        <input id="habitName" maxlength="40" placeholder="새 습관 이름" aria-label="습관 이름" required />
-        <button type="submit" class="primary">추가</button>
+      <form id="habitForm" class="card habit-form">
+        <div class="add-row">
+          <input id="habitEmoji" class="emoji-input" maxlength="4" value="✅" aria-label="이모지" />
+          <input id="habitName" maxlength="40" placeholder="새 습관 이름" aria-label="습관 이름" required />
+        </div>
+        <div class="add-row">
+          <label class="target-label">하루<input id="habitTarget" type="number" inputmode="numeric" min="1" max="20" value="1" aria-label="하루 목표 횟수" /></label>
+          <input id="habitUnit" maxlength="6" placeholder="단위 (번·잔·알)" aria-label="단위" />
+          <button type="submit" class="primary">추가</button>
+        </div>
+        <p class="muted small form-hint">예) 💧 물 마시기 · 하루 3 · 잔 → 한 잔 마실 때마다 한 번씩 눌러요</p>
       </form>
       <button id="habitEditToggle" type="button" class="link-btn" aria-pressed="false">습관 편집</button>
+    </section>
+
+    <!-- 공부 -->
+    <section id="studyView" class="view" role="tabpanel" hidden>
+      <div id="goalList"></div>
+      <p id="studyEmpty" class="card empty" hidden>단어장이나 책처럼 끝내고 싶은 공부를 목표로 넣어 보세요.<br>목표일에 맞춰 매일 할 분량과 복습을 알려 드려요.</p>
+      <button id="goalAddToggle" type="button" class="primary wide">+ 새 공부 목표</button>
+
+      <form id="goalForm" class="card goal-form" hidden>
+        <h2>새 공부 목표</h2>
+        <div class="segmented" role="radiogroup" aria-label="종류">
+          <button type="button" data-kind="cards" role="radio">🔤 단어 카드</button>
+          <button type="button" data-kind="amount" role="radio">📘 책·강의 분량</button>
+        </div>
+        <div class="add-row">
+          <input id="goalEmoji" class="emoji-input" maxlength="4" value="📚" aria-label="이모지" />
+          <input id="goalName" maxlength="40" placeholder="목표 이름 예) 토익 보카" aria-label="목표 이름" required />
+        </div>
+        <div id="goalCardsFields" class="field-stack">
+          <textarea id="goalCards" rows="6" placeholder="한 줄에 하나씩: 단어 - 뜻&#10;apple - 사과&#10;abandon - 버리다, 포기하다&#10;(엑셀에서 두 칸을 복사해 붙여 넣어도 돼요)" aria-label="단어 목록"></textarea>
+          <p id="goalCardsCount" class="muted small"></p>
+        </div>
+        <div id="goalAmountFields" class="field-row">
+          <input id="goalTotal" inputmode="numeric" placeholder="전체 분량 예) 320" aria-label="전체 분량" autocomplete="off" />
+          <select id="goalUnit" aria-label="단위"></select>
+        </div>
+        <label class="field-label">언제까지 끝낼까요?<input id="goalDeadline" type="date" required /></label>
+        <label class="field-label">내 수준<select id="goalLevel"></select></label>
+        <p id="goalPreview" class="preview"></p>
+        <div class="button-row">
+          <button type="submit" class="primary">목표 만들기</button>
+          <button id="goalCancel" type="button" class="secondary">취소</button>
+        </div>
+      </form>
+
+      <section id="cardSession" class="card session" hidden aria-live="polite">
+        <div class="card-head">
+          <h2 id="sessionTitle"></h2>
+          <div class="session-tools">
+            <button id="typingToggle" type="button" class="chip" aria-pressed="false" aria-label="직접 쳐서 맞히기">⌨️</button>
+            <button id="sessionClose" type="button" class="icon-btn" aria-label="그만하기">×</button>
+          </div>
+        </div>
+        <div class="progress"><div id="sessionBar" class="progress-bar"></div></div>
+        <p id="sessionCount" class="muted small right"></p>
+        <button id="flashcard" type="button" class="flashcard">
+          <span id="cardFront" class="card-front"></span>
+          <span id="cardBack" class="card-back" hidden></span>
+          <span id="cardHint" class="muted small">눌러서 뜻 보기 (Space)</span>
+        </button>
+        <p id="typeResult" class="type-result" hidden></p>
+        <form id="typeForm" class="type-form" hidden>
+          <input id="typeInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="단어를 쳐 보세요" aria-label="정답 입력" />
+          <button type="submit" class="primary">확인</button>
+        </form>
+        <div id="sessionButtons" class="rate-row"></div>
+      </section>
     </section>
 
     <!-- 가계부 -->

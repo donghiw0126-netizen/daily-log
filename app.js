@@ -9,7 +9,8 @@
   const $ = id => document.getElementById(id);
   const tabButtons = [...document.querySelectorAll('[data-tab]')];
   const typeButtons = [...document.querySelectorAll('[data-type]')];
-  const views = { habits: $('habitsView'), money: $('moneyView'), diary: $('diaryView'), settings: $('settingsView') };
+  const kindButtons = [...document.querySelectorAll('[data-kind]')];
+  const views = { habits: $('habitsView'), study: $('studyView'), money: $('moneyView'), diary: $('diaryView'), settings: $('settingsView') };
 
   let data = loadData();
   let date = L.dateKey();          // 지금 보고 있는 날짜
@@ -18,6 +19,9 @@
   let entryType = 'expense';
   let editingHabits = false;
   let diaryTimer = null;
+  let goalKind = 'cards';
+  let editingGoal = null; // 편집 칸을 연 목표 id
+  let session = null;     // 카드 암기 중: { goalId, mode: 'new' | 'review', queue: [카드 id], index, flipped, results }
 
   // ── 저장 (사생활 보호 모드 등에서 저장소가 막혀 있어도 앱은 돌아가게) ──
   function loadData() {
@@ -45,6 +49,11 @@
     const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, day)).getUTCDay()];
     return `${withYear ? `${y}년 ` : ''}${m}월 ${day}일 (${weekday})`;
   }
+  // 습관 횟수 표시: 단위가 숫자로 시작하면("1잔") 숫자와 붙어 "0/31잔" 처럼 보이지 않게 떼어 둡니다.
+  const startsWithDigit = unit => /^\d/.test(unit);
+  const countLabel = (count, target, unit) =>
+    `${count}/${target}${unit ? (startsWithDigit(unit) ? ' · ' : ' ') + unit : ''}`;
+  const timesLabel = (n, unit) => (startsWithDigit(unit) ? `${n}번 (${unit}씩)` : `${n}${unit || '번'}`);
   const formatMonth = mo => `${Number(mo.slice(0, 4))}년 ${Number(mo.slice(5))}월`;
 
   let toastTimer = null;
@@ -73,8 +82,11 @@
 
   function renderHeader() {
     const today = L.dateKey();
-    $('dateLabel').textContent = date === today ? `오늘 · ${formatDate(date)}` : formatDate(date, true);
-    $('todayButton').hidden = date === today;
+    // 공부는 언제나 진짜 오늘 기준이라 날짜 이동을 숨깁니다.
+    const shown = tab === 'study' ? today : date;
+    $('dateLabel').textContent = shown === today ? `오늘 · ${formatDate(shown)}` : formatDate(shown, true);
+    $('todayButton').hidden = shown === today;
+    $('prevDay').hidden = $('nextDay').hidden = tab === 'study';
     $('nextDay').disabled = date >= today; // 미래 기록은 막습니다
     for (const b of tabButtons) {
       const on = b.dataset.tab === tab;
@@ -88,37 +100,68 @@
   function renderHabits() {
     const list = $('habitList');
     list.replaceChildren();
-    const done = data.habits.filter(h => L.isChecked(data.checks, date, h.id)).length;
-    const total = data.habits.length;
+    // 오늘이면 공부 목표의 오늘 분량도 할 일로 보여 줍니다.
+    const today = L.dateKey();
+    const studyRows = date !== today ? [] : data.goals
+      .map(g => ({ g, p: L.dailyPlan(g, today) }))
+      .filter(({ p }) => !p.complete || p.reviewsDue > 0);
+    const done = data.habits.filter(h => L.isDone(data.checks, date, h)).length + studyRows.filter(r => r.p.todayDone).length;
+    const total = data.habits.length + studyRows.length;
     $('habitProgress').textContent = total ? `${done} / ${total} 완료` : '';
     $('habitBar').style.width = total ? `${(done / total) * 100}%` : '0';
-    $('habitEmpty').hidden = total > 0;
-    $('habitEditToggle').hidden = total === 0;
+    $('habitEmpty').hidden = data.habits.length > 0;
+    $('habitEditToggle').hidden = data.habits.length === 0;
     $('habitEditToggle').textContent = editingHabits ? '편집 끝내기' : '습관 편집';
     $('habitEditToggle').setAttribute('aria-pressed', String(editingHabits));
 
     data.habits.forEach((h, index) => {
-      const checked = L.isChecked(data.checks, date, h.id);
+      const target = h.target || 1;
+      const count = L.checkCount(data.checks, date, h.id);
+      const checked = count >= target;
+      const multi = target > 1;
       const li = el('li', `habit${checked ? ' done' : ''}`);
 
       const toggle = el('button', 'habit-toggle');
       toggle.type = 'button';
       toggle.setAttribute('aria-pressed', String(checked));
-      toggle.append(el('span', 'check', checked ? '✓' : ''), el('span', 'habit-emoji', h.emoji), el('span', 'habit-name', h.name));
+      const partial = multi && count > 0 && !checked;
+      toggle.append(el('span', `check${partial ? ' partial' : ''}`, checked ? '✓' : partial ? `${count}/${target}` : ''),
+        el('span', 'habit-emoji', h.emoji), el('span', 'habit-name', h.name));
+      if (multi) {
+        // 하루 여러 번: 몇 번 했는지 동그라미로 (10번 이하일 때만, 많으면 숫자만)
+        if (target <= 10) {
+          const pips = el('span', 'pips');
+          for (let i = 0; i < target; i++) pips.append(el('i', i < count ? 'on' : ''));
+          toggle.append(pips);
+        }
+        toggle.append(el('span', 'habit-count', countLabel(count, target, h.unit)));
+        toggle.setAttribute('aria-label', `${h.name} ${countLabel(count, target, h.unit)}${checked ? ' 완료' : ', 누르면 한 번 추가'}`);
+      }
       toggle.addEventListener('click', () => {
-        data.checks = L.toggleCheck(data.checks, date, h.id);
+        if (multi && checked) { toast(`오늘 ${timesLabel(target, h.unit)} 다 채웠어요! 잘못 눌렀다면 − 로 취소하세요.`); return; }
+        data.checks = L.tapHabit(data.checks, date, h);
         saveData();
         renderHabits();
+        if (multi && L.isDone(data.checks, date, h)) toast(`${h.emoji} ${h.name} 오늘 목표 완료!`);
       });
 
       const meta = el('div', 'habit-meta');
-      const count = L.streak(data.checks, h.id, date);
-      meta.append(el('span', `streak${count ? '' : ' zero'}`, count ? `🔥 ${count}일` : '—'));
+      if (multi && count > 0) {
+        const undo = button('−', 'icon-btn undo-btn', () => {
+          data.checks = L.undoTap(data.checks, date, h);
+          saveData();
+          renderHabits();
+        });
+        undo.setAttribute('aria-label', `${h.name} 한 번 취소`);
+        meta.append(undo);
+      }
+      const streakDays = L.streak(data.checks, h, date);
+      meta.append(el('span', `streak${streakDays ? '' : ' zero'}`, streakDays ? `🔥 ${streakDays}일` : '—'));
       const week = el('span', 'week');
       week.setAttribute('aria-label', '최근 7일');
-      for (const d of L.recentDays(data.checks, h.id, date)) {
-        const dot = el('i', d.done ? 'on' : '');
-        dot.title = `${formatDate(d.date)} ${d.done ? '완료' : '안 함'}`;
+      for (const d of L.recentDays(data.checks, h, date)) {
+        const dot = el('i', d.done ? 'on' : d.count ? 'part' : '');
+        dot.title = `${formatDate(d.date)} ${d.done ? '완료' : d.count ? countLabel(d.count, target, h.unit) : '안 함'}`;
         week.append(dot);
       }
       meta.append(week);
@@ -127,6 +170,20 @@
       if (editingHabits) li.append(habitEditButtons(h, index));
       list.append(li);
     });
+
+    for (const { g, p } of studyRows) {
+      const li = el('li', `habit study-row${p.todayDone ? ' done' : ''}`);
+      const go = el('button', 'habit-toggle');
+      go.type = 'button';
+      const parts = [];
+      if (p.newLeft) parts.push(`새로 ${qty(g, p.newLeft)}`);
+      if (p.reviewsDue) parts.push(`복습 ${p.reviewsDue}개`);
+      const name = el('span', 'habit-name', g.name);
+      go.append(el('span', 'check', p.todayDone ? '✓' : ''), el('span', 'habit-emoji', g.emoji), name);
+      go.addEventListener('click', () => setTab('study'));
+      li.append(go, el('div', 'habit-meta', parts.length ? parts.join(' · ') : '오늘 분량 끝!'));
+      list.append(li);
+    }
   }
 
   function habitEditButtons(h, index) {
@@ -144,6 +201,19 @@
     button('✎', `${h.name} 이름 바꾸기`, () => {
       const name = prompt('새 이름', h.name);
       if (name && name.trim()) { h.name = name.trim().slice(0, 40); saveData(); renderHabits(); }
+    });
+    button('🔢', `${h.name} 하루 횟수 바꾸기`, () => {
+      const input = prompt('하루에 몇 번 할까요? (1~20)\n예) 물 500ml 컵으로 1.5L → 3', String(h.target || 1));
+      if (input === null) return;
+      const target = Number(input.trim());
+      if (!Number.isInteger(target) || target < 1 || target > L.MAX_TARGET) { toast('1부터 20까지 숫자로 적어 주세요.'); return; }
+      const unit = target > 1 ? prompt('단위를 적어 주세요 (예: 잔, 번, 알). 비워 둬도 돼요.', h.unit || '') : '';
+      data.checks = L.retarget(data.checks, h, target, L.dateKey());
+      h.target = target;
+      h.unit = (unit || '').trim().slice(0, 6);
+      saveData();
+      renderHabits();
+      toast(target > 1 ? `하루 ${timesLabel(target, h.unit)}으로 바꿨어요.` : '하루 1번으로 바꿨어요.');
     });
     button('🗑', `${h.name} 삭제`, () => {
       if (!confirm(`'${h.name}' 습관과 체크 기록을 지울까요?`)) return;
@@ -166,14 +236,456 @@
     e.preventDefault();
     const name = $('habitName').value.trim();
     if (!name) return;
-    data.habits.push({ id: L.newId(), name: name.slice(0, 40), emoji: $('habitEmoji').value.trim() || '✅' });
+    const target = Number($('habitTarget').value);
+    if (!Number.isInteger(target) || target < 1 || target > L.MAX_TARGET) { toast('하루 횟수는 1부터 20까지 적어 주세요.'); return; }
+    data.habits.push({
+      id: L.newId(), name: name.slice(0, 40), emoji: $('habitEmoji').value.trim() || '✅',
+      target, unit: target > 1 ? $('habitUnit').value.trim().slice(0, 6) : '',
+    });
     saveData();
     $('habitName').value = '';
     $('habitEmoji').value = '✅';
+    $('habitTarget').value = '1';
+    $('habitUnit').value = '';
     renderHabits();
   });
 
   $('habitEditToggle').addEventListener('click', () => { editingHabits = !editingHabits; renderHabits(); });
+
+  // ── 공부 ───────────────────────────────────────────────
+  const qty = (g, n) => `${n.toLocaleString('ko-KR')}${g.unit}`;
+  const range = (g, it) => (it.from === it.to ? `${it.from}${g.unit}` : `${it.from}~${it.to}${g.unit}`);
+  const findGoal = id => data.goals.find(g => g.id === id);
+
+  function updateGoal(next) {
+    data.goals = data.goals.map(g => (g.id === next.id ? next : g));
+    saveData();
+  }
+
+  // 새 날이 되면 전날 복습 정답률로 분량 배율을 조절합니다.
+  function refreshGoals() {
+    const today = L.dateKey();
+    let changed = false;
+    data.goals = data.goals.map(g => {
+      const next = L.adjustFactor(g, today);
+      if (next !== g) changed = true;
+      return next;
+    });
+    if (changed) saveData();
+  }
+
+  function button(label, className, onClick) {
+    const b = el('button', className, label);
+    b.type = 'button';
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function renderStudy() {
+    const inSession = session !== null;
+    const formOpen = !$('goalForm').hidden;
+    $('cardSession').hidden = !inSession;
+    $('goalList').hidden = inSession;
+    $('goalAddToggle').hidden = inSession || formOpen;
+    if (inSession) $('goalForm').hidden = true;
+    $('studyEmpty').hidden = inSession || formOpen || data.goals.length > 0;
+    if (inSession) { renderSession(); return; }
+    const today = L.dateKey();
+    $('goalList').replaceChildren(...data.goals.map(g => goalCard(g, today)));
+  }
+
+  function goalCard(g, today) {
+    const p = L.dailyPlan(g, today);
+    const card = el('article', 'card goal');
+
+    const head = el('div', 'card-head');
+    head.append(el('h2', '', `${g.emoji} ${g.name}`),
+      button(editingGoal === g.id ? '닫기' : '편집', 'link-btn inline', () => {
+        editingGoal = editingGoal === g.id ? null : g.id;
+        renderStudy();
+      }));
+    card.append(head);
+
+    const pct = p.total ? Math.round((p.learnedAll / p.total) * 100) : 0;
+    const bar = el('div', 'progress');
+    const fill = el('div', 'progress-bar');
+    fill.style.width = `${pct}%`;
+    bar.append(fill);
+    const dday = L.daysBetween(today, g.deadline);
+    card.append(bar, el('p', 'goal-stats muted small',
+      `${qty(g, p.learnedAll)} / ${qty(g, p.total)} (${pct}%) · ${g.kind === 'cards' ? '완전히 외움' : '복습 끝'} ${p.mastered}${g.kind === 'cards' ? '개' : '번'}` +
+      ` · 목표일 ${formatDate(g.deadline)} ${dday > 0 ? `D-${dday}` : dday === 0 ? 'D-day' : `${-dday}일 지남`}`));
+
+    // 오늘 할 일
+    const todayBox = el('div', 'goal-today');
+    if (p.complete) {
+      todayBox.append(el('p', 'good', p.reviewsDue ? '🎉 전부 공부했어요! 남은 복습만 하면 돼요.' : '🎉 전부 공부했어요! 복습할 때가 되면 여기에 알려 드릴게요.'));
+    } else {
+      const newLine = p.newLeft
+        ? `새로 할 분량 ${qty(g, p.quota)}${p.doneToday ? ` (${p.doneToday} 완료)` : ''}`
+        : `새 분량 ${qty(g, p.quota)} 끝! ✓`;
+      todayBox.append(el('p', '', `오늘 · ${newLine} · 복습 ${p.reviewsDue}개`));
+    }
+    card.append(todayBox);
+
+    if (p.overdue) card.append(el('p', 'warn', '⚠️ 목표일이 지났어요. 남은 분량이 모두 오늘로 잡혔으니 편집에서 목표일을 다시 정해 주세요.'));
+    else if (p.late) {
+      const lateBy = L.daysBetween(g.deadline, p.finishDate);
+      card.append(el('p', 'warn', `⚠️ 지금 분량이면 ${formatDate(p.finishDate)}에 끝나요 (목표일보다 ${lateBy}일 늦어요). 복습 정답률이 낮아 새 분량을 줄였어요. 복습에 집중하거나 목표일을 미뤄 보세요.`));
+    }
+    if (!p.complete) {
+      card.append(el('p', 'muted small', `내 수준 반영: 목표일에 딱 맞추는 분량(하루 ${qty(g, Math.ceil(p.required))})의 ${Math.round(g.factor * 100)}% · 전날 복습 정답률에 따라 매일 조절돼요`));
+    }
+
+    card.append(g.kind === 'cards' ? cardActions(g, p) : amountActions(g, p, today));
+    if (editingGoal === g.id) card.append(goalEditor(g, p, today));
+    return card;
+  }
+
+  function cardActions(g, p) {
+    const row = el('div', 'button-row');
+    if (p.reviewsDue) row.append(button(`복습하기 ${p.reviewsDue}개`, 'primary', () => startSession(g.id, 'review')));
+    if (p.newLeft) row.append(button(`새 단어 외우기 ${p.newLeft}개`, p.reviewsDue ? 'secondary' : 'primary', () => startSession(g.id, 'new', p.newLeft)));
+    else if (p.left) row.append(button('더 외우기 +5', 'secondary', () => startSession(g.id, 'new', 5)));
+    return row;
+  }
+
+  function amountActions(g, p, today) {
+    const box = el('div', 'amount-actions');
+    const due = g.items.filter(it => it.due && it.due <= today);
+    if (due.length) {
+      box.append(el('p', 'small muted', '복습할 범위 — 다시 훑어보고 얼마나 기억나는지 골라 주세요.'));
+      const list = el('ul', 'review-list');
+      for (const it of due) {
+        const li = el('li');
+        li.append(el('span', 'review-range', `${range(g, it)} (${formatDate(it.learnedOn)} 공부)`));
+        const rates = el('div', 'rate-mini');
+        for (const [rating, label] of [['again', '까먹음'], ['hard', '헷갈림'], ['good', '기억남']]) {
+          rates.append(button(label, `rate ${rating}`, () => { updateGoal(L.applyReview(findGoal(g.id), it.id, rating, L.dateKey())); render(); }));
+        }
+        li.append(rates);
+        list.append(li);
+      }
+      box.append(list);
+    }
+    if (p.left) {
+      const start = p.learnedAll + 1;
+      const n = p.newLeft || Math.min(p.left, p.quota || p.left);
+      const form = el('form', 'amount-form');
+      form.append(el('span', 'small', p.newLeft ? `오늘: ${range(g, { from: start, to: start + p.newLeft - 1 })}` : '더 했다면:'));
+      const input = el('input');
+      input.inputMode = 'numeric';
+      input.value = String(n);
+      input.setAttribute('aria-label', `공부한 ${g.unit} 수`);
+      form.append(input, el('span', 'small', g.unit), el('button', 'primary', '했어요'));
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        const amount = L.parseAmount(input.value);
+        if (amount === null) { toast('숫자로 적어 주세요.'); return; }
+        updateGoal(L.addAmount(findGoal(g.id), amount, L.dateKey()));
+        toast(`${qty(g, Math.min(amount, p.left))} 기록했어요. 내일 복습으로 다시 나와요.`);
+        render();
+      });
+      box.append(form);
+    }
+    return box;
+  }
+
+  function goalEditor(g, p, today) {
+    const box = el('div', 'goal-editor');
+
+    const dateRow = el('form', 'add-row');
+    const dateInput = el('input');
+    dateInput.type = 'date';
+    dateInput.min = today;
+    dateInput.value = g.deadline;
+    dateInput.setAttribute('aria-label', '새 목표일');
+    dateRow.append(dateInput, el('button', 'secondary', '목표일 바꾸기'));
+    dateRow.addEventListener('submit', e => {
+      e.preventDefault();
+      if (!L.isValidDate(dateInput.value) || dateInput.value < today) { toast('오늘이나 그 뒤 날짜를 골라 주세요.'); return; }
+      updateGoal({ ...findGoal(g.id), deadline: dateInput.value });
+      toast('목표일을 바꿨어요. 하루 분량을 다시 계산했어요.');
+      render();
+    });
+    box.append(dateRow);
+
+    if (g.kind === 'cards') {
+      const addForm = el('form', 'field-stack');
+      const text = el('textarea');
+      text.rows = 3;
+      text.placeholder = '단어 더 넣기: 한 줄에 하나씩 단어 - 뜻';
+      text.setAttribute('aria-label', '추가할 단어');
+      addForm.append(text, el('button', 'secondary', '단어 추가'));
+      addForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const { cards, skipped } = L.parseCards(text.value);
+        if (!cards.length) { toast('단어와 뜻 사이에 - 를 넣어 주세요.'); return; }
+        const goal = findGoal(g.id);
+        updateGoal({ ...goal, items: [...goal.items, ...cards.map(L.newCard)] });
+        toast(`단어 ${cards.length}개를 넣었어요.${skipped ? ` (못 읽은 줄 ${skipped}개)` : ''}`);
+        render();
+      });
+      box.append(addForm);
+    } else {
+      const totalRow = el('form', 'add-row');
+      const totalInput = el('input');
+      totalInput.inputMode = 'numeric';
+      totalInput.value = String(g.total);
+      totalInput.setAttribute('aria-label', '전체 분량');
+      totalRow.append(totalInput, el('button', 'secondary', '전체 분량 바꾸기'));
+      totalRow.addEventListener('submit', e => {
+        e.preventDefault();
+        const total = L.parseAmount(totalInput.value);
+        if (total === null || total > 100000 || total < p.learnedAll) { toast(`${qty(g, p.learnedAll)} 이상으로 적어 주세요.`); return; }
+        updateGoal({ ...findGoal(g.id), total });
+        toast('전체 분량을 바꿨어요.');
+        render();
+      });
+      box.append(totalRow);
+    }
+
+    box.append(button('목표 삭제', 'danger-btn', () => {
+      if (!confirm(`'${g.name}' 목표와 공부·복습 기록을 모두 지울까요?`)) return;
+      data.goals = data.goals.filter(x => x.id !== g.id);
+      editingGoal = null;
+      saveData();
+      render();
+    }));
+    return box;
+  }
+
+  // 단어 카드 암기·복습
+  function startSession(goalId, mode, count) {
+    const g = findGoal(goalId);
+    const today = L.dateKey();
+    const queue = (mode === 'review'
+      ? g.items.filter(it => it.learnedOn && it.due && it.due <= today)
+      : g.items.filter(it => !it.learnedOn).slice(0, count)).map(it => it.id);
+    if (!queue.length) return;
+    session = { goalId, mode, queue, index: 0, flipped: false, typed: null, results: { good: 0, hard: 0, again: 0, learned: 0, known: 0 } };
+    renderStudy();
+    if (!(mode === 'review' && g.typing)) $('flashcard').focus();
+  }
+
+  function sessionItem() {
+    const g = session && findGoal(session.goalId);
+    const item = g && g.items.find(it => it.id === session.queue[session.index]);
+    return item ? { g, item } : null;
+  }
+
+  function renderSession() {
+    const current = sessionItem();
+    if (!current) { session = null; renderStudy(); return; } // 다른 창에서 목표를 지운 경우
+    const { g, item } = current;
+    const review = session.mode === 'review';
+    $('sessionTitle').textContent = `${g.emoji} ${g.name} · ${review ? '복습' : '새 단어'}`;
+    $('sessionBar').style.width = `${(session.index / session.queue.length) * 100}%`;
+    $('sessionCount').textContent = `${session.index + 1} / ${session.queue.length}`;
+    $('typingToggle').hidden = !review;
+    $('typingToggle').setAttribute('aria-pressed', String(g.typing));
+    $('typingToggle').textContent = `⌨️ ${g.typing ? '켬' : '끔'}`;
+    $('typingToggle').title = `직접 쳐서 맞히기 ${g.typing ? '켜짐' : '꺼짐'}`;
+    const typing = review && g.typing;
+    // 쳐서 맞히기: 뜻을 먼저 보여 주고, 답한 뒤에 단어를 보여 줍니다.
+    $('cardFront').textContent = typing ? item.back : item.front;
+    $('cardBack').textContent = typing ? item.front : item.back;
+    $('cardBack').hidden = typing ? !session.typed : !session.flipped;
+    $('cardHint').hidden = typing || session.flipped;
+    $('typeForm').hidden = !typing || session.typed !== null;
+    $('typeResult').hidden = !typing || session.typed === null;
+
+    const row = $('sessionButtons');
+    row.replaceChildren();
+    if (typing) {
+      if (!session.typed) {
+        row.append(button('모르겠어요', 'secondary', () => checkTyped('')));
+        $('typeInput').value = '';
+        $('typeInput').focus();
+      } else {
+        const { answer, result } = session.typed;
+        const box = $('typeResult');
+        box.className = `type-result ${result}`;
+        box.replaceChildren(el('span', '', { good: '😊 정답!', hard: '🤔 거의 맞았어요. 철자를 확인해 보세요', again: '😣 틀렸어요' }[result]));
+        if (answer) box.append(el('small', '', `내가 쓴 답: ${answer}`));
+        if (result !== 'good' && answer) box.append(button('사실 맞았어요 (같은 뜻의 다른 단어를 썼어요)', 'link-btn override', () => answerTyped('good')));
+        const next = button('다음 →', 'primary wide', () => answerTyped(result));
+        row.append(next);
+        next.focus();
+      }
+    } else if (review) {
+      if (!session.flipped) row.append(button('뜻 보기', 'primary wide', flipCard));
+      else {
+        row.append(button('😣 까먹음 1', 'rate again', () => answer('again')),
+          button('🤔 헷갈림 2', 'rate hard', () => answer('hard')),
+          button('😊 기억남 3', 'rate good', () => answer('good')));
+      }
+    } else {
+      row.append(button('이미 알아요 1', 'secondary', () => answer('known')));
+      row.append(session.flipped
+        ? button('외웠어요 ✓ 3', 'primary', () => answer('learned'))
+        : button('뜻 보기', 'primary', flipCard));
+    }
+  }
+
+  function checkTyped(typed) {
+    const current = sessionItem();
+    if (!current || session.typed) return;
+    session.typed = { answer: typed.trim(), result: L.gradeTyped(typed, current.item.front) };
+    renderSession();
+  }
+
+  function answerTyped(result) {
+    session.typed = null;
+    answer(result);
+    if (session) $('typeInput').focus(); // 폰에서 키보드가 내려가지 않게
+  }
+
+  $('typeForm').addEventListener('submit', e => {
+    e.preventDefault();
+    checkTyped($('typeInput').value);
+  });
+
+  $('typingToggle').addEventListener('click', () => {
+    const current = sessionItem();
+    if (!current) return;
+    updateGoal({ ...current.g, typing: !current.g.typing });
+    session.typed = null;
+    session.flipped = false;
+    renderSession();
+  });
+
+  function flipCard() {
+    if (!session || session.flipped || (session.mode === 'review' && findGoal(session.goalId).typing)) return;
+    session.flipped = true;
+    renderSession();
+  }
+
+  function answer(action) {
+    const current = sessionItem();
+    if (!current) return;
+    const today = L.dateKey();
+    const { g, item } = current;
+    if (action === 'known' || action === 'learned') {
+      updateGoal(L.learnCard(g, item.id, today, action === 'known'));
+      session.results[action]++;
+    } else {
+      updateGoal(L.applyReview(g, item.id, action, today));
+      session.results[action]++;
+    }
+    session.index++;
+    session.flipped = false;
+    if (session.index < session.queue.length) { renderSession(); return; }
+    const r = session.results;
+    toast(session.mode === 'review'
+      ? `복습 끝! 기억남 ${r.good} · 헷갈림 ${r.hard} · 까먹음 ${r.again}`
+      : `새 단어 ${r.learned}개 외웠어요!${r.known ? ` (이미 앎 ${r.known}개)` : ''} 내일 복습으로 다시 나와요.`);
+    session = null;
+    render();
+  }
+
+  $('flashcard').addEventListener('click', flipCard);
+  $('sessionClose').addEventListener('click', () => { session = null; render(); });
+
+  // 키보드: Space 뜻 보기 · 1/2/3 답하기
+  document.addEventListener('keydown', e => {
+    if (!session || tab !== 'study' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const review = session.mode === 'review';
+    // 쳐서 맞히기 중에는 숫자·Space 가 글자 입력이라 단축키를 쓰지 않습니다. (Enter 는 확인·다음 버튼이 처리)
+    if (review && findGoal(session.goalId)?.typing) {
+      if (e.key === 'Escape') { session = null; render(); }
+      return;
+    }
+    const keys = review
+      ? { 1: 'again', 2: 'hard', 3: 'good' }
+      : { 1: 'known', 3: 'learned' };
+    if (e.key === ' ' || e.key === 'Enter') {
+      if (!session.flipped) { e.preventDefault(); flipCard(); }
+    } else if (keys[e.key] && (session.flipped || keys[e.key] === 'known')) {
+      e.preventDefault();
+      answer(keys[e.key]);
+    } else if (e.key === 'Escape') {
+      session = null;
+      render();
+    }
+  });
+
+  // 새 목표 만들기
+  $('goalUnit').replaceChildren(...L.UNITS.map(u => el('option', '', u)));
+  $('goalLevel').replaceChildren(...Object.entries(L.LEVELS).map(([id, lv]) => {
+    const o = el('option', '', lv.name);
+    o.value = id;
+    return o;
+  }));
+
+  function goalFormTotal() {
+    if (goalKind === 'cards') return L.parseCards($('goalCards').value).cards.length;
+    const n = L.parseAmount($('goalTotal').value);
+    return n !== null && n <= 100000 ? n : 0;
+  }
+
+  function renderGoalForm() {
+    for (const b of kindButtons) {
+      const on = b.dataset.kind === goalKind;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+    $('goalCardsFields').hidden = goalKind !== 'cards';
+    $('goalAmountFields').hidden = goalKind !== 'amount';
+    if (goalKind === 'cards') {
+      const { cards, skipped } = L.parseCards($('goalCards').value);
+      $('goalCardsCount').textContent = cards.length || skipped
+        ? `단어 ${cards.length}개${skipped ? ` · 못 읽은 줄 ${skipped}개 (단어와 뜻 사이에 - 를 넣어 주세요)` : ''}`
+        : '';
+    }
+    const today = L.dateKey();
+    const total = goalFormTotal();
+    const deadline = $('goalDeadline').value;
+    const unit = goalKind === 'cards' ? '단어' : $('goalUnit').value;
+    if (!total || !L.isValidDate(deadline) || deadline < today) { $('goalPreview').textContent = ''; return; }
+    const days = L.daysBetween(today, deadline) + 1;
+    const perDay = Math.min(total, Math.ceil((total / days) * L.LEVELS[$('goalLevel').value].factor));
+    $('goalPreview').textContent =
+      `하루 약 ${perDay.toLocaleString('ko-KR')}${unit}씩 · 오늘 포함 ${days}일 · 공부한 다음 날부터 복습도 자동으로 잡혀요`;
+  }
+
+  function openGoalForm(open) {
+    $('goalForm').hidden = !open;
+    if (open) {
+      $('goalForm').reset();
+      $('goalEmoji').value = '📚';
+      $('goalDeadline').min = L.dateKey();
+      $('goalDeadline').value = L.addDays(L.dateKey(), 29);
+      renderGoalForm();
+      $('goalName').focus();
+    }
+    renderStudy();
+  }
+
+  for (const b of kindButtons) b.addEventListener('click', () => { goalKind = b.dataset.kind; renderGoalForm(); });
+  for (const id of ['goalCards', 'goalTotal', 'goalDeadline', 'goalLevel', 'goalUnit']) {
+    $(id).addEventListener('input', renderGoalForm);
+  }
+  $('goalAddToggle').addEventListener('click', () => openGoalForm(true));
+  $('goalCancel').addEventListener('click', () => openGoalForm(false));
+
+  $('goalForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const today = L.dateKey();
+    const name = $('goalName').value.trim();
+    const deadline = $('goalDeadline').value;
+    const total = goalFormTotal();
+    if (!name) { toast('목표 이름을 적어 주세요.'); return; }
+    if (!total) { toast(goalKind === 'cards' ? '단어를 한 줄에 하나씩 "단어 - 뜻"으로 넣어 주세요.' : '전체 분량을 숫자로 적어 주세요.'); return; }
+    if (!L.isValidDate(deadline) || deadline < today) { toast('목표일은 오늘이나 그 뒤로 골라 주세요.'); return; }
+    data.goals.push(L.createGoal({
+      name, emoji: $('goalEmoji').value.trim(), kind: goalKind, unit: $('goalUnit').value, total,
+      cards: goalKind === 'cards' ? L.parseCards($('goalCards').value).cards : [], deadline, level: $('goalLevel').value,
+    }, today));
+    saveData();
+    openGoalForm(false);
+    toast('목표를 만들었어요. 오늘 분량부터 시작해 보세요!');
+  });
 
   // ── 가계부 ─────────────────────────────────────────────
   function renderEntryType() {
@@ -345,7 +857,7 @@
   function renderSettings() {
     const days = new Set([...Object.keys(data.checks), ...Object.keys(data.diary), ...data.entries.map(e => e.date)]);
     $('storageInfo').textContent =
-      `지금 저장된 것: 습관 ${data.habits.length}개 · 가계부 ${data.entries.length}건 · 일기 ${Object.keys(data.diary).length}편 (기록한 날 ${days.size}일)`;
+      `지금 저장된 것: 습관 ${data.habits.length}개 · 공부 목표 ${data.goals.length}개 · 가계부 ${data.entries.length}건 · 일기 ${Object.keys(data.diary).length}편 (기록한 날 ${days.size}일)`;
   }
 
   $('exportButton').addEventListener('click', () => {
@@ -366,7 +878,7 @@
     let imported;
     try { imported = L.normalizeData(JSON.parse(await file.text())); }
     catch (err) { toast(err instanceof SyntaxError ? '파일을 읽을 수 없어요.' : err.message); return; }
-    const summary = `습관 ${imported.habits.length}개, 가계부 ${imported.entries.length}건, 일기 ${Object.keys(imported.diary).length}편`;
+    const summary = `습관 ${imported.habits.length}개, 공부 목표 ${imported.goals.length}개, 가계부 ${imported.entries.length}건, 일기 ${Object.keys(imported.diary).length}편`;
     if (!confirm(`백업(${summary})으로 지금 기록을 바꿀까요?\n지금 기록은 사라져요.`)) return;
     data = imported;
     saveData();
@@ -387,8 +899,10 @@
 
   // ── 시작 ───────────────────────────────────────────────
   function render() {
+    refreshGoals();
     renderHeader();
     if (tab === 'habits') renderHabits();
+    else if (tab === 'study') renderStudy();
     else if (tab === 'money') renderMoney();
     else if (tab === 'diary') renderDiary();
     else renderSettings();
