@@ -312,3 +312,62 @@ test('기록 연속 일수: 습관·가계부·일기·공부 중 하나라도 �
   assert.equal(L.recordStreak(data, '2026-11-03'), 4);
   assert.equal(L.recordStreak(data, '2026-11-06'), 0);
 });
+
+test('쇼핑 리스트: 마트별로 묶고, 안 산 것의 예상 금액을 더한다', () => {
+  let list = [];
+  list = L.addShopItem(list, { store: '이마트', name: '토마토', category: '식비', price: '5,000' }, 's1');
+  list = L.addShopItem(list, { store: '코스트코', name: '과일', price: '' }, 's2');
+  list = L.addShopItem(list, { store: ' 이마트 ', name: '쌀', price: '32000원' }, 's3');
+  list = L.addShopItem(list, { store: '', name: '휴지' }, 's4');
+  assert.equal(L.addShopItem(list, { store: '이마트', name: '  ' }, 's5'), list); // 품목이 없으면 그대로
+  assert.deepEqual(list.map(i => i.category), ['식비', '쇼핑', '쇼핑', '쇼핑']); // 안 고르거나 없는 분류는 '쇼핑'
+  assert.equal(L.addShopItem([], { name: '월급?', category: '월급' }, 'x')[0].category, '쇼핑'); // 수입 분류는 안 됨
+  const groups = L.shopGroups(list);
+  assert.deepEqual(groups.map(g => [g.store, g.items.map(i => i.name), g.left, g.total]),
+    [['이마트', ['토마토', '쌀'], 2, 37000], ['코스트코', ['과일'], 1, 0], [L.NO_STORE, ['휴지'], 1, 0]]);
+});
+
+test('쇼핑 체크: 가계부에 지출로 적고, 취소하면 그 기록도 지운다', () => {
+  let data = L.emptyData();
+  data.shopping = L.addShopItem([], { store: '이마트', name: '토마토', category: '식비', price: '5000' }, 's1');
+  data.shopping = L.addShopItem(data.shopping, { store: '코스트코', name: '과일' }, 's2');
+  data.entries.push({ id: 'old', date: TODAY, type: 'expense', amount: 3000, category: '식비', memo: '' });
+
+  data = L.buyShopItem(data, 's1', TODAY, 'e1');
+  assert.deepEqual(data.entries[1], { id: 'e1', date: TODAY, type: 'expense', amount: 5000, category: '식비', memo: '이마트 토마토' });
+  assert.equal(data.shopping[0].bought, true);
+  assert.equal(data.shopping[0].entryId, 'e1');
+  assert.equal(L.buyShopItem(data, 's1', TODAY, 'e9'), data); // 이미 산 것은 두 번 적지 않는다
+  assert.deepEqual(L.shopGroups(data.shopping)[0], { store: '이마트', items: [data.shopping[0]], left: 0, total: 0, spent: 5000 });
+
+  // 가격을 몰랐던 품목은 그때 적은 금액으로, 비워 두면 체크만
+  const priced = L.buyShopItem(data, 's2', TODAY, 'e2', '12,000');
+  assert.equal(priced.entries.at(-1).amount, 12000);
+  assert.equal(priced.entries.at(-1).category, '쇼핑');
+  assert.equal(priced.shopping[1].price, 12000);
+  const unpriced = L.buyShopItem(data, 's2', TODAY, 'e2', '');
+  assert.equal(unpriced.entries.length, 2);
+  assert.equal(unpriced.shopping[1].entryId, '');
+
+  data = L.unbuyShopItem(data, 's1');
+  assert.deepEqual(data.entries.map(e => e.id), ['old']);
+  assert.equal(data.shopping[0].bought, false);
+  assert.equal(L.unbuyShopItem(unpriced, 's2').entries.length, 2); // 적은 기록이 없으면 가계부는 그대로
+});
+
+test('쇼핑 리스트 백업: 예전 백업도 읽히고, 잘못된 항목과 없어진 기록 연결은 정리한다', () => {
+  assert.deepEqual(L.normalizeData({ version: 1 }).shopping, []);
+  let data = L.emptyData();
+  data.shopping = L.addShopItem([], { store: '이마트', name: '토마토', price: '5000' }, 's1');
+  data = L.buyShopItem(data, 's1', TODAY, 'e1');
+  assert.deepEqual(L.normalizeData(JSON.parse(JSON.stringify(data))), data);
+
+  const raw = JSON.parse(JSON.stringify(data));
+  raw.entries = []; // 가계부에서 기록을 지운 경우
+  raw.shopping.push({ id: 's1', name: '중복' }, { id: 's2', name: '' }, { id: 's3', name: '우유', price: -5, store: 7, category: '없는 분류' }, 'x');
+  const back = L.normalizeData(raw);
+  assert.equal(back.shopping[0].entryId, '');
+  assert.equal(back.shopping[0].bought, true);
+  assert.deepEqual(back.shopping[1], { id: 's3', store: L.NO_STORE, name: '우유', category: '쇼핑', price: 0, bought: false, entryId: '' });
+  assert.equal(back.shopping.length, 2);
+});

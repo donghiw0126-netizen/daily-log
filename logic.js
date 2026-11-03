@@ -7,6 +7,7 @@
 //   checks:  { 'YYYY-MM-DD': { 습관 id: 그날 한 횟수 } }
 //   entries: [{ id, date, type: 'expense' | 'income', amount, category, memo }]
 //   diary:   { 'YYYY-MM-DD': { mood, text } }
+//   shopping: [{ id, store: 마트, name: 품목, category: 지출 분류, price: 가격(모르면 0), bought, entryId: 체크할 때 적은 가계부 기록 id }]
 //   goals:   [{ id, name, emoji, kind: 'cards' | 'amount', unit, total, startDate, deadline,
 //              factor, factorDate, items: [...], reviewLog: { 'YYYY-MM-DD': { good, hard, again } } }]
 //            items — 단어 카드: { id, front, back, learnedOn, step, due, known }
@@ -363,10 +364,63 @@
     };
   }
 
+  // ── 쇼핑 리스트 ────────────────────────────────────────
+  const SHOP_CATEGORY = '쇼핑'; // 분류를 안 고른(예전) 품목은 이 분류의 지출로 적힙니다
+  const NO_STORE = '어디서든';
+
+  const shopCategory = c => (CATEGORIES.expense.includes(c) ? c : SHOP_CATEGORY);
+
+  function addShopItem(list, { store, name, category, price }, id) {
+    const item = {
+      id, store: String(store || '').trim().slice(0, 20) || NO_STORE,
+      name: String(name || '').trim().slice(0, 40), category: shopCategory(category), price: parseAmount(price) || 0, bought: false, entryId: '',
+    };
+    return item.name ? [...list, item] : list;
+  }
+
+  // 마트별로 묶기 (처음 적은 마트부터). total: 아직 안 산 것의 예상 금액, spent: 산 것의 금액
+  function shopGroups(list) {
+    const groups = new Map();
+    for (const it of list) {
+      if (!groups.has(it.store)) groups.set(it.store, { store: it.store, items: [], left: 0, total: 0, spent: 0 });
+      const g = groups.get(it.store);
+      g.items.push(it);
+      if (it.bought) g.spent += it.price;
+      else { g.left++; g.total += it.price; }
+    }
+    return [...groups.values()];
+  }
+
+  // 샀어요: 가격이 있으면 그 날짜 가계부에 지출을 적고, 어떤 기록인지 기억해 둡니다.
+  function buyShopItem(data, itemId, date, entryId, price) {
+    const it = data.shopping.find(x => x.id === itemId);
+    if (!it || it.bought) return data;
+    const amount = price === undefined ? it.price : parseAmount(price) || 0;
+    const entry = amount > 0
+      ? { id: entryId, date, type: 'expense', amount, category: shopCategory(it.category), memo: `${it.store === NO_STORE ? '' : `${it.store} `}${it.name}`.slice(0, 100) }
+      : null;
+    return {
+      ...data,
+      shopping: data.shopping.map(x => (x.id === itemId ? { ...x, price: amount, bought: true, entryId: entry ? entryId : '' } : x)),
+      entries: entry ? [...data.entries, entry] : data.entries,
+    };
+  }
+
+  // 체크 취소: 그때 적은 가계부 기록도 지웁니다.
+  function unbuyShopItem(data, itemId) {
+    const it = data.shopping.find(x => x.id === itemId);
+    if (!it || !it.bought) return data;
+    return {
+      ...data,
+      shopping: data.shopping.map(x => (x.id === itemId ? { ...x, bought: false, entryId: '' } : x)),
+      entries: it.entryId ? data.entries.filter(e => e.id !== it.entryId) : data.entries,
+    };
+  }
+
   // ── 데이터 전체 (저장·백업 가져오기) ───────────────────
 
   function emptyData() {
-    return { version: DATA_VERSION, habits: [], checks: {}, entries: [], diary: {}, goals: [] };
+    return { version: DATA_VERSION, habits: [], checks: {}, entries: [], diary: {}, goals: [], shopping: [] };
   }
 
   function newId() {
@@ -432,6 +486,22 @@
     for (const g of Array.isArray(raw.goals) ? raw.goals : []) {
       const goal = normalizeGoal(g);
       if (goal && !goalIds.has(goal.id)) { goalIds.add(goal.id); data.goals.push(goal); }
+    }
+
+    // shopping 이 없는 예전 백업도 그대로 읽힙니다. 지워진 가계부 기록을 가리키는 entryId 는 비웁니다.
+    const entryIds = new Set(data.entries.map(e => e.id));
+    const shopIds = new Set();
+    for (const it of Array.isArray(raw.shopping) ? raw.shopping : []) {
+      if (!isPlainObject(it) || typeof it.id !== 'string' || shopIds.has(it.id)) continue;
+      const name = cleanText(it.name, 40).trim();
+      if (!name) continue;
+      shopIds.add(it.id);
+      const bought = it.bought === true;
+      data.shopping.push({
+        id: it.id, store: cleanText(it.store, 20).trim() || NO_STORE, name, category: shopCategory(it.category),
+        price: Number.isInteger(it.price) && it.price > 0 && it.price <= MAX_AMOUNT ? it.price : 0,
+        bought, entryId: bought && entryIds.has(it.entryId) ? it.entryId : '',
+      });
     }
     return data;
   }
@@ -499,6 +569,7 @@
     MAX_TARGET, checkCount, isDone, tapHabit, undoTap, retarget, streak, recentDays, habitRate, weekOf,
     activeDates, recordStreak,
     parseAmount, formatWon, summarizeMonth, entriesOfMonth,
+    SHOP_CATEGORY, NO_STORE, addShopItem, shopGroups, buyShopItem, unbuyShopItem,
     REVIEW_INTERVALS, MASTERED, LEVELS, UNITS,
     daysBetween, dailyPlan, reviewItem, applyReview, learnCard, addAmount, adjustFactor, parseCards, gradeTyped, newCard, createGoal,
     emptyData, newId, normalizeData,

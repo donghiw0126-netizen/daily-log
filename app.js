@@ -916,6 +916,7 @@
   }
 
   function renderMoney() {
+    renderShopping();
     $('monthLabel').textContent = formatMonth(month);
     $('nextMonth').disabled = month >= L.monthOf(L.dateKey());
     const s = L.summarizeMonth(data.entries, month);
@@ -966,6 +967,105 @@
       list.append(li);
     }
   }
+
+  // 쇼핑 리스트: 마트별로 묶어 보여 주고, 체크하면 지금 보는 날짜 가계부에 적습니다.
+  function renderShopping() {
+    const groups = L.shopGroups(data.shopping);
+    const left = groups.reduce((n, g) => n + g.left, 0);
+    const total = groups.reduce((n, g) => n + g.total, 0);
+    $('shopLeft').textContent = left ? `${left}개 남음${total ? ` · 예상 ${L.formatWon(total)}` : ''}` : '';
+    $('shopEmpty').hidden = groups.length > 0;
+    $('shopClear').hidden = !data.shopping.some(it => it.bought);
+    $('shopStores').replaceChildren(...groups.filter(g => g.store !== L.NO_STORE).map(g => {
+      const o = el('option');
+      o.value = g.store;
+      return o;
+    }));
+    $('shopList').replaceChildren(...groups.map(g => {
+      const box = el('section', 'shop-group');
+      const head = el('div', 'shop-store');
+      const sub = g.left ? `${g.left}개 남음${g.total ? ` · 예상 ${L.formatWon(g.total)}` : ''}` : '다 샀어요 ✓';
+      head.append(el('b', '', g.store), el('span', 'muted', sub));
+      const ul = el('ul', 'shop-items');
+      for (const it of g.items) {
+        const li = el('li', `shop-item${it.bought ? ' done' : ''}`);
+        const toggle = el('button', 'shop-toggle');
+        toggle.type = 'button';
+        toggle.setAttribute('aria-pressed', String(it.bought));
+        const name = el('span', 'shop-name', it.name);
+        name.append(el('small', 'shop-cat', it.category));
+        toggle.append(el('span', `check${it.bought ? ' on' : ''}`, it.bought ? '✓' : ''), name,
+          el('span', 'shop-price', it.price ? L.formatWon(it.price) : ''));
+        toggle.addEventListener('click', () => toggleShopItem(it));
+        const del = el('button', 'icon-btn', '×');
+        del.type = 'button';
+        del.setAttribute('aria-label', `${it.name} 지우기`);
+        del.addEventListener('click', () => {
+          data.shopping = data.shopping.filter(x => x.id !== it.id);
+          saveData();
+          renderShopping();
+        });
+        li.append(toggle, del);
+        ul.append(li);
+      }
+      box.append(head, ul);
+      return box;
+    }));
+  }
+
+  function toggleShopItem(it) {
+    if (it.bought) {
+      data = L.unbuyShopItem(data, it.id);
+      if (it.entryId) toast(`가계부에서 ${it.name} 기록을 지웠어요.`);
+    } else {
+      let price;
+      if (!it.price) {
+        const answer = prompt(`${it.name}, 얼마였어요? (비워 두면 가계부에는 안 적어요)`, '');
+        if (answer === null) return; // 취소
+        if (answer.trim() && L.parseAmount(answer) === null) { toast('금액을 숫자로 적어 주세요.'); return; }
+        price = answer;
+      }
+      data = L.buyShopItem(data, it.id, date, L.newId(), price);
+      const bought = data.shopping.find(x => x.id === it.id);
+      toast(bought.entryId ? `${formatDate(date)} 가계부에 ${L.formatWon(bought.price)} 적었어요.` : `${it.name} 샀어요 ✓`);
+    }
+    saveData();
+    month = L.monthOf(date);
+    render(); // 기록 연속 일수도 함께 바뀝니다
+  }
+
+  // 분류 고르기: 가계부 지출 분류와 같고, 장보기가 대부분이라 처음엔 식비
+  $('shopCategory').replaceChildren(...L.CATEGORIES.expense.map(c => el('option', '', c)));
+  $('shopCategory').value = '식비';
+
+  $('shopPrice').addEventListener('input', e => {
+    const digits = e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 13);
+    e.target.value = digits ? Number(digits).toLocaleString('ko-KR') : '';
+  });
+
+  $('shopForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const price = $('shopPrice').value;
+    if (price && L.parseAmount(price) === null) { toast('가격을 숫자로 적어 주세요.'); return; }
+    const before = data.shopping.length;
+    data.shopping = L.addShopItem(data.shopping,
+      { store: $('shopStore').value, name: $('shopName').value, category: $('shopCategory').value, price }, L.newId());
+    if (data.shopping.length === before) { $('shopName').focus(); return; }
+    saveData();
+    // 같은 마트 품목을 이어서 적기 쉽게 마트 이름과 분류는 남겨 둡니다.
+    $('shopName').value = '';
+    $('shopPrice').value = '';
+    $('shopName').focus();
+    renderShopping();
+  });
+
+  $('shopClear').addEventListener('click', () => {
+    const n = data.shopping.filter(it => it.bought).length;
+    data.shopping = data.shopping.filter(it => !it.bought);
+    saveData();
+    renderShopping();
+    toast(`산 것 ${n}개를 목록에서 치웠어요. 가계부 기록은 그대로예요.`);
+  });
 
   for (const b of typeButtons) {
     b.addEventListener('click', () => { entryType = b.dataset.type; renderEntryType(); });
@@ -1074,7 +1174,7 @@
   function renderSettings() {
     const days = new Set([...Object.keys(data.checks), ...Object.keys(data.diary), ...data.entries.map(e => e.date)]);
     $('storageInfo').textContent =
-      `지금 저장된 것: 습관 ${data.habits.length}개 · 공부 목표 ${data.goals.length}개 · 가계부 ${data.entries.length}건 · 일기 ${Object.keys(data.diary).length}편 (기록한 날 ${days.size}일)`;
+      `지금 저장된 것: 습관 ${data.habits.length}개 · 공부 목표 ${data.goals.length}개 · 가계부 ${data.entries.length}건 · 쇼핑 ${data.shopping.length}개 · 일기 ${Object.keys(data.diary).length}편 (기록한 날 ${days.size}일)`;
   }
 
   $('exportButton').addEventListener('click', () => {

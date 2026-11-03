@@ -522,6 +522,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .entry-memo { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .entry .icon-btn { min-width: 30px; height: 30px; color: var(--faint); }
+.shop-form { display: grid; grid-template-columns: 1fr 1.3fr 118px 112px auto; gap: 8px; margin-bottom: 6px; }
+.shop-group { margin-top: 14px; }
+.shop-store { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.shop-store b { font-size: 15px; }
+.shop-items { list-style: none; margin: 0 0 4px; padding: 0; }
+.shop-item { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line-soft); }
+.shop-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; background: none; padding: 9px 0; text-align: left; }
+.shop-toggle .check { width: 26px; height: 26px; font-size: 14px; }
+.shop-toggle .check.on { background: var(--accent); border-color: var(--accent); }
+.shop-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.shop-cat { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--field); color: var(--muted); font-size: 11px; text-decoration: none; display: inline-block; vertical-align: 1px; }
+.shop-price { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.shop-item.done .shop-name { color: var(--faint); text-decoration: line-through; }
+.shop-item.done .shop-price { color: var(--faint); }
+.shop-item .icon-btn { min-width: 30px; height: 30px; color: var(--faint); }
 
 /* ── 일기·기분 ─────────────────────────────────── */
 .mood-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
@@ -585,6 +600,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ── 폰·작은 화면 ───────────────────────────────── */
 @media (max-width: 900px) {
+  .shop-form { grid-template-columns: 1fr 1fr; }
+  .shop-form .primary { grid-column: 1 / -1; }
   .layout { display: block; }
   .sidebar { display: none; }
   .main { padding: 12px 16px calc(100px + env(safe-area-inset-bottom)); }
