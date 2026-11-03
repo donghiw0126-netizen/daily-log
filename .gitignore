@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+# 앱에서 내려받은 백업 파일 (일기·가계부가 들어 있어 절대 올리지 않음)
+daily-log-backup-*.json

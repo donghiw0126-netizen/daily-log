@@ -1,0 +1,10 @@
+{
+  "name": "daily-log",
+  "version": "0.1.0",
+  "private": true,
+  "description": "습관 체크 · 가계부 · 일기를 한곳에 담은 생활 기록 웹앱",
+  "scripts": {
+    "test": "node --test",
+    "start": "py -m http.server 8002"
+  }
+}

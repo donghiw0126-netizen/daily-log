@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="description" content="매일 할 일 체크, 가계부, 한 줄 일기를 한곳에. 기록은 내 기기에만 저장돼요." />
+  <title>Daily Log | 오늘의 기록</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">✓</span> DAILY LOG</div>
+      <div class="date-nav">
+        <button id="prevDay" type="button" class="icon-btn" aria-label="전날">◀</button>
+        <span id="dateLabel" class="date-label"></span>
+        <button id="nextDay" type="button" class="icon-btn" aria-label="다음 날">▶</button>
+        <button id="todayButton" type="button" class="chip" hidden>오늘</button>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="기능">
+      <button type="button" role="tab" data-tab="habits">✅ 습관</button>
+      <button type="button" role="tab" data-tab="money">💰 가계부</button>
+      <button type="button" role="tab" data-tab="diary">📔 일기</button>
+      <button type="button" role="tab" data-tab="settings">⚙️ 설정</button>
+    </nav>
+
+    <!-- 습관 -->
+    <section id="habitsView" class="view" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>오늘 할 일</h2>
+          <span id="habitProgress" class="muted"></span>
+        </div>
+        <div class="progress"><div id="habitBar" class="progress-bar"></div></div>
+        <ul id="habitList" class="habit-list"></ul>
+        <p id="habitEmpty" class="empty" hidden>아직 습관이 없어요. 아래에서 첫 습관을 추가해 보세요.<br>예) 💧 물 2L 마시기, 🏃 30분 운동, 📚 영어 단어 20개</p>
+      </div>
+      <form id="habitForm" class="card add-row">
+        <input id="habitEmoji" class="emoji-input" maxlength="4" value="✅" aria-label="이모지" />
+        <input id="habitName" maxlength="40" placeholder="새 습관 이름" aria-label="습관 이름" required />
+        <button type="submit" class="primary">추가</button>
+      </form>
+      <button id="habitEditToggle" type="button" class="link-btn" aria-pressed="false">습관 편집</button>
+    </section>
+
+    <!-- 가계부 -->
+    <section id="moneyView" class="view" role="tabpanel" hidden>
+      <form id="entryForm" class="card entry-form">
+        <div class="segmented" role="radiogroup" aria-label="종류">
+          <button type="button" data-type="expense" role="radio">지출</button>
+          <button type="button" data-type="income" role="radio">수입</button>
+        </div>
+        <div class="field-row">
+          <input id="entryAmount" inputmode="numeric" placeholder="금액 (원)" aria-label="금액" autocomplete="off" required />
+          <select id="entryCategory" aria-label="분류"></select>
+        </div>
+        <input id="entryMemo" maxlength="100" placeholder="메모 (선택) 예) 점심 김밥" aria-label="메모" autocomplete="off" />
+        <button type="submit" class="primary wide">이 날짜에 기록하기</button>
+      </form>
+
+      <div class="card">
+        <div class="card-head">
+          <button id="prevMonth" type="button" class="icon-btn" aria-label="이전 달">◀</button>
+          <h2 id="monthLabel"></h2>
+          <button id="nextMonth" type="button" class="icon-btn" aria-label="다음 달">▶</button>
+        </div>
+        <div class="summary">
+          <div><span class="muted">수입</span><b id="sumIncome" class="good"></b></div>
+          <div><span class="muted">지출</span><b id="sumExpense" class="bad"></b></div>
+          <div><span class="muted">남은 돈</span><b id="sumBalance"></b></div>
+        </div>
+        <ul id="categoryBars" class="bars"></ul>
+      </div>
+
+      <div class="card">
+        <h2>이번 달 내역</h2>
+        <ul id="entryList" class="entry-list"></ul>
+        <p id="entryEmpty" class="empty" hidden>이 달에는 아직 기록이 없어요.</p>
+      </div>
+    </section>
+
+    <!-- 일기 -->
+    <section id="diaryView" class="view" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>오늘의 기분</h2>
+          <span id="diarySaved" class="muted" aria-live="polite"></span>
+        </div>
+        <div id="moodRow" class="mood-row" role="radiogroup" aria-label="기분"></div>
+        <textarea id="diaryText" rows="7" placeholder="오늘 있었던 일, 느낀 점을 몇 줄만 적어 보세요." aria-label="일기"></textarea>
+        <div class="muted small right"><span id="diaryCount">0</span>자</div>
+      </div>
+      <div class="card">
+        <h2 id="diaryMonthLabel"></h2>
+        <ul id="diaryList" class="diary-list"></ul>
+        <p id="diaryEmpty" class="empty" hidden>이 달에 쓴 일기가 없어요.</p>
+      </div>
+    </section>
+
+    <!-- 설정 -->
+    <section id="settingsView" class="view" role="tabpanel" hidden>
+      <div class="card">
+        <h2>백업</h2>
+        <p class="muted">기록은 <b>이 브라우저에만</b> 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 백업 파일을 내려받아 두세요. 다른 기기에서 가져오기로 옮길 수도 있어요.</p>
+        <div class="button-row">
+          <button id="exportButton" type="button" class="primary">백업 내려받기</button>
+          <label class="secondary file-btn">백업 가져오기<input id="importInput" type="file" accept="application/json,.json" hidden /></label>
+        </div>
+        <p id="storageInfo" class="muted small"></p>
+      </div>
+      <div class="card danger">
+        <h2>모두 지우기</h2>
+        <p class="muted">습관·가계부·일기를 전부 지워요. 되돌릴 수 없어요.</p>
+        <button id="resetButton" type="button" class="danger-btn">모든 기록 지우기</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="./logic.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
