@@ -57,8 +57,8 @@ test('연속 기록: 오늘 안 했으면 어제까지 세고, 목표를 다 채
 test('최근 7일은 오래된 날부터 오늘까지, 한 횟수도 함께', () => {
   const days = L.recentDays({ '2026-11-03': { w: 3 }, '2026-10-28': { w: 1 } }, WATER, '2026-11-03');
   assert.equal(days.length, 7);
-  assert.deepEqual(days[0], { date: '2026-10-28', count: 1, done: false });
-  assert.deepEqual(days[6], { date: '2026-11-03', count: 3, done: true });
+  assert.deepEqual(days[0], { date: '2026-10-28', count: 1, done: false, off: false });
+  assert.deepEqual(days[6], { date: '2026-11-03', count: 3, done: true, off: false });
 });
 
 test('예전 체크 기록([id, ...])은 1번 한 것으로 바뀐다', () => {
@@ -113,7 +113,7 @@ test('백업 가져오기: 다른 파일은 거부하고 잘못된 항목은 버
     ],
     diary: { '2026-11-03': { mood: '🙂', text: '좋은 하루' }, '2026-11-02': { mood: 'x', text: '  ' } },
   });
-  assert.deepEqual(data.habits, [{ id: 'a', name: '물 마시기', emoji: '💧', target: 1, unit: '' }]);
+  assert.deepEqual(data.habits, [{ id: 'a', name: '물 마시기', emoji: '💧', target: 1, unit: '', days: L.EVERY_DAY }]);
   assert.deepEqual(data.checks, { '2026-11-03': { a: 1 } });
   assert.deepEqual(data.entries, [{ id: 'e1', date: '2026-11-03', type: 'expense', amount: 5000, category: '기타', memo: '김밥' }]);
   assert.deepEqual(data.diary, { '2026-11-03': { mood: '🙂', text: '좋은 하루' } });
@@ -121,7 +121,7 @@ test('백업 가져오기: 다른 파일은 거부하고 잘못된 항목은 버
 
 test('저장한 데이터는 그대로 다시 읽힌다', () => {
   const data = L.emptyData();
-  data.habits.push({ id: 'h1', name: '운동', emoji: '🏃', target: 1, unit: '' }, { id: 'h2', name: '물', emoji: '💧', target: 3, unit: '잔' });
+  data.habits.push({ id: 'h1', name: '운동', emoji: '🏃', target: 1, unit: '', days: [1, 3, 5] }, { id: 'h2', name: '물', emoji: '💧', target: 3, unit: '잔', days: L.EVERY_DAY });
   data.checks['2026-11-03'] = { h1: 1, h2: 2 };
   data.entries.push({ id: 'e1', date: '2026-11-03', type: 'income', amount: 1000, category: '용돈', memo: '' });
   data.diary['2026-11-03'] = { mood: '', text: '<script>alert(1)</script>' };
@@ -399,4 +399,76 @@ test('쇼핑 가격 고치기: 산 품목이면 가계부 금액도 바꾸고, �
   const added = L.repriceShopItem(cleared, 's1', '3000', TODAY, 'e2');
   assert.deepEqual(added.entries.at(-1), { id: 'e2', date: TODAY, type: 'expense', amount: 3000, category: '식비', memo: '이마트 토마토' });
   assert.equal(added.shopping[0].entryId, 'e2');
+});
+
+// 2026-11-02 은 월요일
+const MWF = { id: 'm', target: 1, days: [1, 3, 5] };
+
+test('습관 요일: 요일 읽기와 이름', () => {
+  assert.equal(L.weekday('2026-11-02'), 1);
+  assert.deepEqual(L.parseDays('월수금'), [1, 3, 5]);
+  assert.deepEqual(L.parseDays('월, 목요일'), [1, 4]);
+  assert.deepEqual(L.parseDays('평일'), [1, 2, 3, 4, 5]);
+  assert.deepEqual(L.parseDays('주말'), [0, 6]);
+  assert.deepEqual(L.parseDays('매일'), L.EVERY_DAY);
+  assert.equal(L.parseDays('월요일 저녁'), null);
+  assert.equal(L.parseDays('  '), null);
+  assert.equal(L.daysLabel([1, 3, 5]), '월·수·금');
+  assert.equal(L.daysLabel([0, 1]), '월·일'); // 월요일부터
+  assert.equal(L.daysLabel([1, 2, 3, 4, 5]), '평일');
+  assert.equal(L.daysLabel(undefined), '매일');
+  assert.equal(L.isScheduled(MWF, '2026-11-03'), false); // 화
+  assert.equal(L.isScheduled(MWF, '2026-11-04'), true);  // 수
+  assert.equal(L.isScheduled(A, '2026-11-03'), true);    // 요일이 없으면 매일
+});
+
+test('습관 요일: 쉬는 날은 연속 기록이 끊기지 않고, 달성률에서 빠진다', () => {
+  // 10/26(월) 10/28(수) 10/30(금) 11/02(월) 했음, 11/04(수) 아직
+  const checks = {};
+  for (const d of ['2026-10-26', '2026-10-28', '2026-10-30', '2026-11-02']) checks[d] = { m: 1 };
+  assert.equal(L.streak(checks, MWF, '2026-11-03'), 4); // 화: 쉬는 날
+  assert.equal(L.streak(checks, MWF, '2026-11-04'), 4); // 수: 아직 안 함 → 어제까지
+  assert.equal(L.streak(checks, MWF, '2026-11-07'), 0); // 11/06(금)을 빠뜨림
+  checks['2026-11-03'] = { m: 1 }; // 쉬는 날에 했으면 그날도 센다
+  assert.equal(L.streak(checks, MWF, '2026-11-03'), 5);
+  assert.deepEqual(L.recentDays({}, MWF, '2026-11-04', 3).map(d => d.off), [false, true, false]);
+
+  assert.deepEqual(L.habitRate([A, MWF], { '2026-11-03': { a: 1, m: 1 } }, '2026-11-03'), { done: 1, total: 1, pct: 100 });
+  assert.deepEqual(L.habitRate([MWF], {}, '2026-11-03'), { done: 0, total: 0, pct: 0 });
+});
+
+test('습관 요일 백업: 없거나 잘못된 요일은 매일로', () => {
+  const back = L.normalizeData({ version: 1, habits: [
+    { id: 'a', name: '물' }, { id: 'b', name: '운동', days: [5, 1, 3, 3] }, { id: 'c', name: '책', days: [9, 'x'] }, { id: 'd', name: '청소', days: [] },
+  ] });
+  assert.deepEqual(back.habits.map(h => h.days), [L.EVERY_DAY, [1, 3, 5], L.EVERY_DAY, L.EVERY_DAY]);
+});
+
+test('집중 타이머: 남은 시간, 집중 시간 쌓기, 백업', () => {
+  const now = 1_000_000;
+  assert.equal(L.timerLeft({ endsAt: now + 90_500, left: 0 }, now), 91);
+  assert.equal(L.timerLeft({ endsAt: now - 5000, left: 0 }, now), 0);
+  assert.equal(L.timerLeft({ endsAt: null, left: 300 }, now), 300);
+  let focus = L.addFocus({}, TODAY, 25);
+  focus = L.addFocus(focus, TODAY, 50);
+  assert.deepEqual(focus, { [TODAY]: 75 });
+  assert.equal(L.formatMinutes(75), '1시간 15분');
+  assert.equal(L.formatMinutes(60), '1시간');
+  assert.equal(L.formatMinutes(25), '25분');
+  assert.deepEqual(L.normalizeData({ version: 1 }).focus, {});
+  assert.deepEqual(L.normalizeData({ version: 1, focus: { [TODAY]: 75, bad: 3, '2026-11-01': -1, '2026-11-02': 2.5 } }).focus, { [TODAY]: 75 });
+  const data = L.emptyData();
+  data.focus = focus;
+  assert.ok(L.activeDates(data).has(TODAY)); // 집중한 날도 기록한 날
+});
+
+test('집중 타이머 직접 설정: 1~180분만 받는다', () => {
+  assert.equal(L.parseMinutes('40'), 40);
+  assert.equal(L.parseMinutes(' 90분 '), 90);
+  assert.equal(L.parseMinutes('180'), 180);
+  assert.equal(L.parseMinutes('0'), null);
+  assert.equal(L.parseMinutes('181'), null);
+  assert.equal(L.parseMinutes('1.5'), null);
+  assert.equal(L.parseMinutes('사십'), null);
+  assert.equal(L.parseMinutes(''), null);
 });

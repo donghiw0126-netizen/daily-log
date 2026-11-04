@@ -65,6 +65,43 @@
     toastTimer = setTimeout(() => { t.hidden = true; }, 2400);
   }
 
+  // 화면 안의 작은 창 (브라우저 prompt·confirm 은 VS Code 미리보기 등에서 뜨지 않아 직접 그립니다)
+  // input 이 있으면 적은 글자(취소하면 null), 없으면 확인 true / 취소 false 를 돌려줍니다.
+  //   await ask({ title: '새 이름', input: { value: '물 마시기' } })
+  //   await ask({ title: '지울까요?', message: '되돌릴 수 없어요.', ok: '지우기', danger: true })
+  let askDone = null; // 열려 있는 창을 닫을 때 부를 함수
+  function ask({ title, message = '', input = null, ok = '확인', danger = false }) {
+    if (askDone) askDone(false); // 이미 열린 창은 취소로 닫고
+    const dialog = $('askDialog');
+    $('askTitle').textContent = title;
+    $('askMessage').textContent = message;
+    $('askMessage').hidden = !message;
+    const field = $('askInput');
+    field.hidden = !input;
+    if (input) {
+      field.value = input.value || '';
+      field.placeholder = input.placeholder || '';
+      field.inputMode = input.inputmode || 'text';
+      field.maxLength = input.maxlength || 100;
+      field.setAttribute('aria-label', title);
+    }
+    $('askOk').textContent = ok;
+    $('askOk').className = danger ? 'danger-fill' : 'primary';
+    return new Promise(resolve => {
+      askDone = confirmed => {
+        askDone = null;
+        if (dialog.open) dialog.close();
+        resolve(input ? (confirmed ? field.value : null) : confirmed);
+      };
+      dialog.showModal();
+      if (input) { field.focus(); field.select(); } else $('askOk').focus();
+    });
+  }
+  $('askForm').addEventListener('submit', e => { e.preventDefault(); if (askDone) askDone(true); });
+  $('askCancel').addEventListener('click', () => { if (askDone) askDone(false); });
+  $('askDialog').addEventListener('cancel', e => { e.preventDefault(); if (askDone) askDone(false); }); // Esc
+  $('askDialog').addEventListener('click', e => { if (e.target === $('askDialog') && askDone) askDone(false); }); // 바깥 누르면 취소
+
   // ── 날짜와 탭 ─────────────────────────────────────────
   function setDate(next) {
     flushDiary();
@@ -165,8 +202,11 @@
     const diary = data.diary[today];
 
     // 요약 카드
-    $('statHabits').textContent = data.habits.length ? `${rate.done} / ${rate.total}` : '—';
+    $('statHabits').textContent = !data.habits.length ? '—' : rate.total ? `${rate.done} / ${rate.total}` : '쉬는 날';
     $('statStudy').textContent = plans.length ? `${plans.filter(r => r.p.todayDone).length} / ${plans.length} 목표` : '—';
+    const focusMin = data.focus[today] || 0;
+    $('statFocus').hidden = !focusMin;
+    $('statFocus').textContent = `⏱ 집중 ${L.formatMinutes(focusMin)}`;
     $('statMoney').textContent = L.formatWon(spent.reduce((n, e) => n + e.amount, 0));
     $('statMood').textContent = diary && diary.mood ? `${diary.mood} ${MOOD_WORDS[diary.mood]}` : '아직이에요';
 
@@ -178,10 +218,12 @@
   }
 
   function renderTodayHabits(today, rate) {
-    $('todayHabitPct').textContent = data.habits.length ? `${rate.pct}%` : '';
+    const due = data.habits.filter(h => L.isScheduled(h, today)); // 쉬는 요일인 습관은 빼고
+    $('todayHabitPct').textContent = due.length ? `${rate.pct}%` : '';
     $('todayHabitBar').style.width = `${rate.pct}%`;
     $('todayHabitEmpty').hidden = data.habits.length > 0;
-    $('todayHabitList').replaceChildren(...data.habits.map(h => {
+    $('todayHabitRest').hidden = !data.habits.length || due.length > 0;
+    $('todayHabitList').replaceChildren(...due.map(h => {
       const target = h.target || 1;
       const count = L.checkCount(data.checks, today, h.id);
       const done = count >= target;
@@ -262,7 +304,7 @@
       fill.style.height = future ? '0' : `${r.pct}%`;
       track.append(fill);
       col.append(track, el('span', 'week-day', WEEKDAYS[new Date(Date.UTC(y, m - 1, day)).getUTCDay()]),
-        el('span', 'week-pct', future || !data.habits.length ? '·' : `${r.pct}%`));
+        el('span', 'week-pct', future || !data.habits.length ? '·' : r.total ? `${r.pct}%` : '쉼'));
       chart.append(col);
     }
   }
@@ -322,8 +364,9 @@
     const studyRows = date !== today ? [] : data.goals
       .map(g => ({ g, p: L.dailyPlan(g, today) }))
       .filter(({ p }) => !p.complete || p.reviewsDue > 0);
-    const done = data.habits.filter(h => L.isDone(data.checks, date, h)).length + studyRows.filter(r => r.p.todayDone).length;
-    const total = data.habits.length + studyRows.length;
+    const rate = L.habitRate(data.habits, data.checks, date); // 쉬는 요일인 습관은 빼고 셉니다
+    const done = rate.done + studyRows.filter(r => r.p.todayDone).length;
+    const total = rate.total + studyRows.length;
     $('habitProgress').textContent = total ? `${done} / ${total} 완료` : '';
     $('habitBar').style.width = total ? `${(done / total) * 100}%` : '0';
     $('habitEmpty').hidden = data.habits.length > 0;
@@ -336,14 +379,15 @@
       const count = L.checkCount(data.checks, date, h.id);
       const checked = count >= target;
       const multi = target > 1;
-      const li = el('li', `habit${checked ? ' done' : ''}`);
+      const off = !L.isScheduled(h, date);
+      const li = el('li', `habit${checked ? ' done' : ''}${off ? ' off' : ''}`);
 
       const toggle = el('button', 'habit-toggle');
       toggle.type = 'button';
       toggle.setAttribute('aria-pressed', String(checked));
       const partial = multi && count > 0 && !checked;
       toggle.append(el('span', `check${partial ? ' partial' : ''}`, checked ? '✓' : partial ? `${count}/${target}` : ''),
-        el('span', 'habit-emoji', h.emoji), el('span', 'habit-name', h.name));
+        el('span', 'habit-emoji', h.emoji), habitNameEl(h, off));
       if (multi) {
         // 하루 여러 번: 몇 번 했는지 동그라미로 (10번 이하일 때만, 많으면 숫자만)
         if (target <= 10) {
@@ -377,8 +421,8 @@
       const week = el('span', 'week');
       week.setAttribute('aria-label', '최근 7일');
       for (const d of L.recentDays(data.checks, h, date)) {
-        const dot = el('i', d.done ? 'on' : d.count ? 'part' : '');
-        dot.title = `${formatDate(d.date)} ${d.done ? '완료' : d.count ? countLabel(d.count, target, h.unit) : '안 함'}`;
+        const dot = el('i', d.done ? 'on' : d.count ? 'part' : d.off ? 'off' : '');
+        dot.title = `${formatDate(d.date)} ${d.done ? '완료' : d.count ? countLabel(d.count, target, h.unit) : d.off ? '쉬는 날' : '안 함'}`;
         week.append(dot);
       }
       meta.append(week);
@@ -403,6 +447,15 @@
     }
   }
 
+  // 이름 + (매일이 아니면) 요일, 쉬는 날이면 표시
+  function habitNameEl(h, off) {
+    const name = el('span', 'habit-name', h.name);
+    const label = L.daysLabel(h.days);
+    if (off) name.append(el('small', 'habit-days rest', '쉬는 날'));
+    else if (label !== '매일') name.append(el('small', 'habit-days', label));
+    return name;
+  }
+
   function habitEditButtons(h, index) {
     const box = el('div', 'habit-edit');
     const button = (label, aria, onClick, disabled = false) => {
@@ -415,16 +468,18 @@
     };
     button('↑', `${h.name} 위로`, () => moveHabit(index, -1), index === 0);
     button('↓', `${h.name} 아래로`, () => moveHabit(index, 1), index === data.habits.length - 1);
-    button('✎', `${h.name} 이름 바꾸기`, () => {
-      const name = prompt('새 이름', h.name);
+    button('✎', `${h.name} 이름 바꾸기`, async () => {
+      const name = await ask({ title: '습관 이름 바꾸기', input: { value: h.name, maxlength: 40 }, ok: '바꾸기' });
       if (name && name.trim()) { h.name = name.trim().slice(0, 40); saveData(); renderHabits(); }
     });
-    button('🔢', `${h.name} 하루 횟수 바꾸기`, () => {
-      const input = prompt('하루에 몇 번 할까요? (1~20)\n예) 물 500ml 컵으로 1.5L → 3', String(h.target || 1));
+    button('🔢', `${h.name} 하루 횟수 바꾸기`, async () => {
+      const input = await ask({ title: '하루에 몇 번 할까요?', message: '1부터 20까지 적어 주세요.\n예) 물 500ml 컵으로 1.5L → 3',
+        input: { value: String(h.target || 1), inputmode: 'numeric', maxlength: 2 }, ok: '다음' });
       if (input === null) return;
       const target = Number(input.trim());
       if (!Number.isInteger(target) || target < 1 || target > L.MAX_TARGET) { toast('1부터 20까지 숫자로 적어 주세요.'); return; }
-      const unit = target > 1 ? prompt('단위를 적어 주세요 (예: 잔, 번, 알). 비워 둬도 돼요.', h.unit || '') : '';
+      const unit = target > 1 ? await ask({ title: '단위를 적어 주세요', message: '예) 잔, 번, 알. 비워 둬도 돼요.', input: { value: h.unit || '', maxlength: 6 }, ok: '바꾸기' }) : '';
+      if (unit === null) return; // 취소
       data.checks = L.retarget(data.checks, h, target, L.dateKey());
       h.target = target;
       h.unit = (unit || '').trim().slice(0, 6);
@@ -432,8 +487,19 @@
       renderHabits();
       toast(target > 1 ? `하루 ${timesLabel(target, h.unit)}으로 바꿨어요.` : '하루 1번으로 바꿨어요.');
     });
-    button('🗑', `${h.name} 삭제`, () => {
-      if (!confirm(`'${h.name}' 습관과 체크 기록을 지울까요?`)) return;
+    button('📅', `${h.name} 요일 바꾸기`, async () => {
+      const input = await ask({ title: '어떤 요일에 할까요?', message: '예) 월수금, 화목, 평일, 주말, 매일\n쉬는 날은 연속 기록이 끊기지 않아요.',
+        input: { value: L.daysLabel(h.days).replace(/·/g, ''), maxlength: 20 }, ok: '바꾸기' });
+      if (input === null) return;
+      const days = L.parseDays(input);
+      if (!days) { toast('요일을 "월수금"이나 "평일"처럼 적어 주세요.'); return; }
+      h.days = days;
+      saveData();
+      renderHabits();
+      toast(`${h.name}: ${L.daysLabel(days)} 할게요. 쉬는 날은 연속 기록이 끊기지 않아요.`);
+    });
+    button('🗑', `${h.name} 삭제`, async () => {
+      if (!await ask({ title: `'${h.name}' 습관을 지울까요?`, message: '체크 기록도 함께 지워져요.', ok: '지우기', danger: true })) return;
       data = L.normalizeData({ ...data, habits: data.habits.filter(x => x.id !== h.id) }); // 체크 기록도 함께 정리
       saveData();
       renderHabits();
@@ -457,9 +523,11 @@
     if (!Number.isInteger(target) || target < 1 || target > L.MAX_TARGET) { toast('하루 횟수는 1부터 20까지 적어 주세요.'); return; }
     data.habits.push({
       id: L.newId(), name: name.slice(0, 40), emoji: $('habitEmoji').value.trim() || '✅',
-      target, unit: target > 1 ? $('habitUnit').value.trim().slice(0, 6) : '',
+      target, unit: target > 1 ? $('habitUnit').value.trim().slice(0, 6) : '', days: [...newHabitDays].sort((a, b) => a - b),
     });
     saveData();
+    newHabitDays = [...L.EVERY_DAY];
+    renderDayPicker();
     $('habitName').value = '';
     $('habitEmoji').value = '✅';
     $('habitTarget').value = '1';
@@ -468,6 +536,22 @@
   });
 
   $('habitEditToggle').addEventListener('click', () => { editingHabits = !editingHabits; renderHabits(); });
+
+  // 새 습관의 요일 고르기 (기본은 매일, 하나는 꼭 남겨 둡니다)
+  let newHabitDays = [...L.EVERY_DAY];
+  function renderDayPicker() {
+    $('habitDays').replaceChildren(...L.DAY_ORDER.map(d => {
+      const on = newHabitDays.includes(d);
+      const b = button(L.DAY_NAMES[d], `day-chip${on ? ' on' : ''}`, () => {
+        if (on && newHabitDays.length === 1) { toast('요일을 하루 이상 골라 주세요.'); return; }
+        newHabitDays = on ? newHabitDays.filter(x => x !== d) : [...newHabitDays, d];
+        renderDayPicker();
+      });
+      b.setAttribute('aria-pressed', String(on));
+      return b;
+    }));
+  }
+  renderDayPicker();
 
   // ── 공부 ───────────────────────────────────────────────
   const qty = (g, n) => `${n.toLocaleString('ko-KR')}${g.unit}`;
@@ -662,8 +746,8 @@
       box.append(totalRow);
     }
 
-    box.append(button('목표 삭제', 'danger-btn', () => {
-      if (!confirm(`'${g.name}' 목표와 공부·복습 기록을 모두 지울까요?`)) return;
+    box.append(button('목표 삭제', 'danger-btn', async () => {
+      if (!await ask({ title: `'${g.name}' 목표를 지울까요?`, message: '공부·복습 기록도 모두 지워져요.', ok: '지우기', danger: true })) return;
       data.goals = data.goals.filter(x => x.id !== g.id);
       editingGoal = null;
       saveData();
@@ -957,8 +1041,8 @@
       const del = el('button', 'icon-btn', '×');
       del.type = 'button';
       del.setAttribute('aria-label', `${e.category} ${L.formatWon(e.amount)} 삭제`);
-      del.addEventListener('click', () => {
-        if (!confirm(`${formatDate(e.date)} ${e.category} ${L.formatWon(e.amount)} 기록을 지울까요?`)) return;
+      del.addEventListener('click', async () => {
+        if (!await ask({ title: '이 기록을 지울까요?', message: `${formatDate(e.date)} ${e.category} ${L.formatWon(e.amount)}${e.memo ? ` · ${e.memo}` : ''}`, ok: '지우기', danger: true })) return;
         data.entries = data.entries.filter(x => x.id !== e.id);
         saveData();
         renderMoney();
@@ -1014,14 +1098,15 @@
     }));
   }
 
-  function toggleShopItem(it) {
+  async function toggleShopItem(it) {
     if (it.bought) {
       data = L.unbuyShopItem(data, it.id);
       if (it.entryId) toast(`가계부에서 ${it.name} 기록을 지웠어요.`);
     } else {
       let price;
       if (!it.price) {
-        const answer = prompt(`${it.name}, 얼마였어요? (비워 두면 가계부에는 안 적어요)`, '');
+        const answer = await ask({ title: `${it.name}, 얼마였어요?`, message: '비워 두면 체크만 하고 가계부에는 안 적어요.',
+          input: { placeholder: '예) 5,000', inputmode: 'numeric', maxlength: 16 }, ok: '샀어요' });
         if (answer === null) return; // 취소
         if (answer.trim() && L.parseAmount(answer) === null) { toast('금액을 숫자로 적어 주세요.'); return; }
         price = answer;
@@ -1039,10 +1124,10 @@
   $('shopCategory').replaceChildren(...L.CATEGORIES.expense.map(c => el('option', '', c)));
   $('shopCategory').value = '식비';
 
-  function editShopPrice(it) {
+  async function editShopPrice(it) {
     const linked = it.bought && it.entryId;
-    const answer = prompt(`${it.name} 가격을 적어 주세요.${linked ? '\n가계부 기록도 함께 바뀌어요. 비우면 기록을 지워요.' : ''}`,
-      it.price ? String(it.price) : '');
+    const answer = await ask({ title: `${it.name} 가격`, message: linked ? '가계부 기록도 함께 바뀌어요. 비우면 기록을 지워요.' : '비워 두면 가격을 지워요.',
+      input: { value: it.price ? it.price.toLocaleString('ko-KR') : '', placeholder: '예) 5,000', inputmode: 'numeric', maxlength: 16 }, ok: '바꾸기' });
     if (answer === null) return; // 취소
     if (answer.trim() && L.parseAmount(answer) === null) { toast('가격을 숫자로 적어 주세요.'); return; }
     data = L.repriceShopItem(data, it.id, answer, date, L.newId());
@@ -1191,7 +1276,7 @@
   function renderSettings() {
     const days = new Set([...Object.keys(data.checks), ...Object.keys(data.diary), ...data.entries.map(e => e.date)]);
     $('storageInfo').textContent =
-      `지금 저장된 것: 습관 ${data.habits.length}개 · 공부 목표 ${data.goals.length}개 · 가계부 ${data.entries.length}건 · 쇼핑 ${data.shopping.length}개 · 일기 ${Object.keys(data.diary).length}편 (기록한 날 ${days.size}일)`;
+      `지금 저장된 것: 습관 ${data.habits.length}개 · 공부 목표 ${data.goals.length}개 · 가계부 ${data.entries.length}건 · 쇼핑 ${data.shopping.length}개 · 일기 ${Object.keys(data.diary).length}편 · 집중 ${L.formatMinutes(Object.values(data.focus).reduce((n, m) => n + m, 0))} (기록한 날 ${days.size}일)`;
   }
 
   $('exportButton').addEventListener('click', () => {
@@ -1213,16 +1298,16 @@
     try { imported = L.normalizeData(JSON.parse(await file.text())); }
     catch (err) { toast(err instanceof SyntaxError ? '파일을 읽을 수 없어요.' : err.message); return; }
     const summary = `습관 ${imported.habits.length}개, 공부 목표 ${imported.goals.length}개, 가계부 ${imported.entries.length}건, 쇼핑 ${imported.shopping.length}개, 일기 ${Object.keys(imported.diary).length}편`;
-    if (!confirm(`백업(${summary})으로 지금 기록을 바꿀까요?\n지금 기록은 사라져요.`)) return;
+    if (!await ask({ title: '백업으로 바꿀까요?', message: `백업: ${summary}\n지금 이 기기의 기록은 사라져요.`, ok: '바꾸기', danger: true })) return;
     data = imported;
     saveData();
     render();
     toast('백업을 가져왔어요.');
   });
 
-  $('resetButton').addEventListener('click', () => {
-    if (!confirm('정말 모든 기록을 지울까요? 되돌릴 수 없어요.')) return;
-    if (!confirm('마지막 확인이에요. 백업은 받아 두셨나요? 지우려면 확인을 눌러 주세요.')) return;
+  $('resetButton').addEventListener('click', async () => {
+    if (!await ask({ title: '정말 모든 기록을 지울까요?', message: '되돌릴 수 없어요.', ok: '지우기', danger: true })) return;
+    if (!await ask({ title: '마지막 확인이에요', message: '백업은 받아 두셨나요? 지우면 습관·공부·가계부·쇼핑·일기가 모두 사라져요.', ok: '모두 지우기', danger: true })) return;
     clearTimeout(diaryTimer);
     diaryTimer = null;
     data = L.emptyData();
@@ -1230,6 +1315,264 @@
     render();
     toast('모든 기록을 지웠어요.');
   });
+
+  // ── 집중 타이머 ────────────────────────────────────────
+  // 타이머 상태는 기록(data)이 아니라 따로 둡니다. 끝까지 마친 집중 시간만 data.focus 에 쌓여요.
+  const TIMER_KEY = 'dailylog:timer';
+  const CUSTOM_KEY = 'dailylog:timer-custom'; // 직접 정한 집중 시간(분)
+  const BASE_TITLE = document.title;
+  let custom = loadCustom(); // 직접 정한 { kind: 'focus' | 'break', minutes }, 아직 안 정했으면 null
+  let customKind = 'focus';  // 직접 설정 칸에서 고르는 중인 종류
+  // 정해 둔 종류(25·50분, 휴식 5분) + 직접 설정
+  const presetOf = id => (id === 'custom'
+    ? { id: 'custom', kind: custom ? custom.kind : 'focus', minutes: custom ? custom.minutes : 30,
+      name: custom ? `✏️ ${custom.kind === 'focus' ? '집중' : '휴식'} ${custom.minutes}분` : '✏️ 직접 설정' }
+    : L.FOCUS_PRESETS.find(p => p.id === id));
+  // 휴식이 끝나면 돌아갈 집중 타이머 (직접 설정이 휴식이면 25분)
+  const focusOr25 = id => (presetOf(id) && presetOf(id).kind === 'focus' ? id : 'focus25');
+  const freshTimer = (id, lastFocus = 'focus25') => ({ preset: id, endsAt: null, left: presetOf(id).minutes * 60, lastFocus });
+  let timer = loadTimer();
+  let audio = null;    // 끝날 때 울릴 소리 (시작 버튼을 누를 때 준비해야 휴대폰에서도 소리가 나요)
+  let wakeLock = null; // 타이머가 도는 동안 화면이 꺼지지 않게
+  let shownPresets = ''; // 지금 그려 둔 종류 칩 (종류|직접 분)
+
+  function loadTimer() {
+    try {
+      const t = JSON.parse(localStorage.getItem(TIMER_KEY));
+      if (t && presetOf(t.preset) && Number.isInteger(t.left) && t.left >= 0 && (t.endsAt === null || Number.isFinite(t.endsAt))) {
+        return { ...t, left: Math.min(t.left, presetOf(t.preset).minutes * 60), lastFocus: focusOr25(t.lastFocus) };
+      }
+    } catch { /* 처음이거나 망가진 값 */ }
+    return freshTimer('focus25');
+  }
+  function saveTimer() {
+    try { localStorage.setItem(TIMER_KEY, JSON.stringify(timer)); } catch { /* 저장 못 해도 타이머는 돌아요 */ }
+  }
+  function loadCustom() {
+    try {
+      const raw = localStorage.getItem(CUSTOM_KEY) || '';
+      const old = L.parseMinutes(raw); // 예전에는 집중 분만 숫자로 저장했어요
+      if (old) return { kind: 'focus', minutes: old };
+      const c = JSON.parse(raw);
+      return c && (c.kind === 'focus' || c.kind === 'break') && L.parseMinutes(String(c.minutes)) ? { kind: c.kind, minutes: c.minutes } : null;
+    } catch { return null; }
+  }
+
+  const pad2 = n => String(n).padStart(2, '0');
+  const clock = sec => `${pad2(Math.floor(sec / 60))}:${pad2(sec % 60)}`;
+
+  function renderTimer() {
+    const p = presetOf(timer.preset);
+    const left = L.timerLeft(timer, Date.now());
+    const running = Boolean(timer.endsAt);
+    const total = p.minutes * 60;
+    const paused = !running && left < total;
+    const state = running ? (p.kind === 'focus' ? '집중하는 중' : '쉬는 중') : paused ? '잠깐 멈춤' : p.kind === 'focus' ? '집중 준비' : '휴식 준비';
+    const action = running ? '일시정지' : paused ? '계속' : '시작';
+    for (const id of ['timerTime', 'miniTimerTime']) $(id).textContent = clock(left);
+    for (const id of ['timerState', 'miniTimerState']) $(id).textContent = state;
+    for (const id of ['timerStart', 'miniTimerStart']) $(id).textContent = action;
+    $('timerReset').disabled = !running && !paused;
+    $('timerBar').style.width = `${((total - left) / total) * 100}%`;
+    $('timerBar').classList.toggle('rest', p.kind === 'break');
+    const focusMin = data.focus[L.dateKey()] || 0;
+    $('focusToday').textContent = focusMin ? `오늘 집중 ${L.formatMinutes(focusMin)}` : '';
+    // 종류 칩은 바뀔 때만 다시 그립니다. (0.5초마다 새로 그리면 누르는 사이에 버튼이 바뀌어 클릭이 사라져요)
+    const presetsKey = `${p.id}|${p.name}`;
+    if (presetsKey !== shownPresets) {
+      shownPresets = presetsKey;
+      $('timerPresets').replaceChildren(...[...L.FOCUS_PRESETS, presetOf('custom')].map(x => {
+        const b = button(x.name, `chip-tab${x.id === p.id ? ' active' : ''}`, () => (x.id === 'custom' ? askCustom() : choosePreset(x.id)));
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(x.id === p.id));
+        return b;
+      }));
+    }
+    document.title = running ? `⏱ ${clock(left)} · Daily Log` : BASE_TITLE;
+  }
+
+  // 돌고 있거나 멈춰 둔 타이머가 있으면 바꾸기 전에 물어봅니다.
+  async function okToDiscard() {
+    const busy = timer.endsAt || L.timerLeft(timer, Date.now()) < presetOf(timer.preset).minutes * 60;
+    return !busy || ask({ title: '지금 타이머를 멈추고 바꿀까요?', message: '진행 중인 시간은 기록되지 않아요.', ok: '바꾸기' });
+  }
+
+  // ✏️ 직접 설정: 처음이거나, 이미 고른 상태에서 다시 누르면 카드 안에 시간 적는 칸을 엽니다.
+  // (브라우저 입력 창(prompt)은 VS Code 미리보기 등에서 뜨지 않아 카드 안의 칸을 씁니다)
+  function askCustom() {
+    if (!$('customForm').hidden) { closeCustom(); return; }
+    if (custom && timer.preset !== 'custom') { choosePreset('custom'); return; }
+    customKind = custom ? custom.kind : 'focus';
+    renderCustomKind();
+    $('customForm').hidden = false;
+    $('customInput').value = custom ? String(custom.minutes) : '';
+    $('customInput').focus();
+  }
+  function renderCustomKind() {
+    for (const b of document.querySelectorAll('[data-custom-kind]')) {
+      const on = b.dataset.customKind === customKind;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+    $('customLabel').textContent = customKind === 'focus' ? '몇 분 집중할까요?' : '몇 분 쉴까요?';
+  }
+  for (const b of document.querySelectorAll('[data-custom-kind]')) {
+    b.addEventListener('click', () => { customKind = b.dataset.customKind; renderCustomKind(); $('customInput').focus(); });
+  }
+  function closeCustom() {
+    $('customForm').hidden = true;
+  }
+
+  $('customCancel').addEventListener('click', closeCustom);
+  $('customForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const minutes = L.parseMinutes($('customInput').value);
+    if (!minutes) { toast(`1부터 ${L.MAX_CUSTOM_MINUTES}까지 분으로 적어 주세요.`); $('customInput').focus(); return; }
+    if (custom && minutes === custom.minutes && customKind === custom.kind && timer.preset === 'custom') { closeCustom(); return; }
+    if (!await okToDiscard()) return;
+    closeCustom();
+    custom = { kind: customKind, minutes };
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch { /* 이번만 적용 */ }
+    timer = freshTimer('custom', customKind === 'focus' ? 'custom' : focusOr25(timer.lastFocus));
+    saveTimer();
+    keepAwake(false);
+    renderTimer();
+    toast(`${customKind === 'focus' ? '집중' : '휴식'} ${minutes}분으로 맞췄어요. 칩을 다시 누르면 바꿀 수 있어요.`);
+  });
+
+  async function choosePreset(id) {
+    closeCustom();
+    if (id === timer.preset) return;
+    if (!await okToDiscard()) return;
+    timer = freshTimer(id, presetOf(id).kind === 'focus' ? id : timer.lastFocus);
+    saveTimer();
+    keepAwake(false);
+    renderTimer();
+  }
+
+  function startPause() {
+    if (timer.endsAt) {
+      timer = { ...timer, left: L.timerLeft(timer, Date.now()), endsAt: null };
+      keepAwake(false);
+    } else {
+      prepareSound();
+      timer = { ...timer, endsAt: Date.now() + timer.left * 1000 };
+      keepAwake(true);
+    }
+    saveTimer();
+    renderTimer();
+  }
+
+  function resetTimer() {
+    timer = freshTimer(timer.preset, timer.lastFocus);
+    saveTimer();
+    keepAwake(false);
+    renderTimer();
+  }
+
+  // 시간이 다 되면: 집중이면 그날 집중 시간에 더하고 휴식으로, 휴식이면 다시 집중으로 (자동 시작은 안 함)
+  function finishTimer() {
+    const p = presetOf(timer.preset);
+    if (p.kind === 'focus') {
+      data.focus = L.addFocus(data.focus, L.dateKey(new Date(timer.endsAt)), p.minutes); // 끝난 날짜에
+      saveData();
+      timer = freshTimer('break5', p.id);
+      ring(`집중 ${p.minutes}분 끝! 수고했어요. 5분 쉬어 가요 ☕`);
+    } else {
+      const next = focusOr25(timer.lastFocus);
+      timer = freshTimer(next, next);
+      ring('쉬는 시간 끝! 다시 집중해 볼까요? 💪');
+    }
+    saveTimer();
+    keepAwake(false);
+    render();
+  }
+
+  function tickTimer() {
+    if (!timer.endsAt) return;
+    if (L.timerLeft(timer, Date.now()) === 0) finishTimer();
+    else renderTimer();
+  }
+
+  function prepareSound() {
+    try {
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    } catch { audio = null; }
+  }
+
+  // 딩-딩-딩 세 번 + 진동 + 안내
+  function ring(message) {
+    toast(message);
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+    if (!audio || audio.state !== 'running') return;
+    [0, 0.35, 0.7].forEach(at => {
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, audio.currentTime + at);
+      gain.gain.exponentialRampToValueAtTime(0.3, audio.currentTime + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + at + 0.3);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(audio.currentTime + at);
+      osc.stop(audio.currentTime + at + 0.32);
+    });
+  }
+
+  async function keepAwake(on) {
+    try {
+      if (on && !wakeLock && 'wakeLock' in navigator && !document.hidden) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      } else if (!on && wakeLock) {
+        await wakeLock.release();
+        wakeLock = null;
+      }
+    } catch { wakeLock = null; } // 지원하지 않거나 배터리 절약 모드
+  }
+
+  for (const id of ['timerStart', 'miniTimerStart']) $(id).addEventListener('click', startPause);
+  $('timerReset').addEventListener('click', resetTimer);
+  setInterval(tickTimer, 500);
+  // 다른 앱에 갔다가 돌아오면 바로 확인하고, 화면 꺼짐 방지를 다시 켭니다.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    tickTimer();
+    if (timer.endsAt) keepAwake(true);
+  });
+
+  // ── 설정: 화면 모드 ────────────────────────────────────
+  // 'system'(기기 설정 따라) · 'light' · 'dark'. 기록이 아니라 이 기기의 화면 설정이라 따로 저장합니다.
+  const THEME_KEY = 'dailylog:theme';
+  const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  function themeChoice() {
+    try { const t = localStorage.getItem(THEME_KEY); return t === 'light' || t === 'dark' ? t : 'system'; } catch { return 'system'; }
+  }
+  function applyTheme(choice) {
+    if (choice === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = choice;
+    // 휴대폰 위쪽 상태 표시줄 색도 바탕색에 맞춥니다.
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', bg);
+  }
+  function renderTheme() {
+    const choice = themeChoice();
+    for (const b of document.querySelectorAll('[data-theme-choice]')) {
+      const on = b.dataset.themeChoice === choice;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+  }
+  for (const b of document.querySelectorAll('[data-theme-choice]')) {
+    b.addEventListener('click', () => {
+      const choice = b.dataset.themeChoice;
+      try { if (choice === 'system') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, choice); } catch { /* 이번만 적용 */ }
+      applyTheme(choice);
+      renderTheme();
+    });
+  }
+  darkQuery.addEventListener('change', () => applyTheme(themeChoice()));
+  applyTheme(themeChoice());
 
   // ── 설정: 앱처럼 설치하기 (PWA) ────────────────────────
   // 배포된 버전인가? (배포할 때 app-version 의 __VERSION__ 이 커밋 번호로 바뀝니다)
@@ -1277,12 +1620,13 @@
   function render() {
     refreshGoals();
     renderHeader();
+    renderTimer(); // 공부 탭과 홈에 같은 타이머가 보여요
     if (tab === 'today') renderToday();
     else if (tab === 'habits') renderHabits();
     else if (tab === 'study') renderStudy();
     else if (tab === 'money') renderMoney();
     else if (tab === 'diary') renderDiary();
-    else { renderSettings(); renderInstall(); }
+    else { renderSettings(); renderInstall(); renderTheme(); }
   }
 
   $('prevDay').addEventListener('click', () => setDate(L.addDays(date, -1)));

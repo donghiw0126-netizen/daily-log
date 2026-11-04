@@ -15,6 +15,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="description" content="매일 할 일 체크, 공부 계획·복습, 가계부, 한 줄 일기를 한곳에. 기록은 내 기기에만 저장돼요." />
   <title>Daily Log | 나를 쌓는 작은 기록</title>
+  <!-- 화면 모드(밝게·어둡게)를 그리기 전에 적용해 깜빡임을 막습니다. 기본은 기기 설정 따라 -->
+  <script>try { const t = localStorage.getItem('dailylog:theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { /* 무시 */ }</script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <link rel="stylesheet" href="./styles.css?v=__VERSION__" />
 </head>
@@ -96,8 +98,8 @@
           <p id="pageSub" class="page-sub"></p>
         </div>
         <svg id="heroArt" class="hero-art" viewBox="0 0 340 170" aria-hidden="true">
-          <path d="M0 170c38-36 86-50 136-40s74 30 114 22 62-22 90-20v38Z" fill="#f1dccd" opacity=".75"/>
-          <path d="M70 170c30-24 72-30 112-22s86 18 158 2v20Z" fill="#ecd0bd" opacity=".55"/>
+          <path d="M0 170c38-36 86-50 136-40s74 30 114 22 62-22 90-20v38Z" style="fill: var(--hill-1)" opacity=".75"/>
+          <path d="M70 170c30-24 72-30 112-22s86 18 158 2v20Z" style="fill: var(--hill-2)" opacity=".55"/>
           <g fill="none" stroke="#86a07a" stroke-width="2" stroke-linecap="round">
             <path d="M178 168c-2-38-10-70-34-104"/>
             <path d="M180 168c6-42 22-76 56-104"/>
@@ -145,7 +147,7 @@
       <section id="todayView" class="view" role="tabpanel" hidden>
         <div class="stat-cards">
           <button type="button" class="stat" data-go="habits"><span class="stat-icon green"><svg class="ico"><use href="#i-check-square"/></svg></span><span><small>오늘의 습관</small><b id="statHabits"></b></span></button>
-          <button type="button" class="stat" data-go="study"><span class="stat-icon peach"><svg class="ico"><use href="#i-book"/></svg></span><span><small>오늘의 공부</small><b id="statStudy"></b></span></button>
+          <button type="button" class="stat" data-go="study"><span class="stat-icon peach"><svg class="ico"><use href="#i-book"/></svg></span><span><small>오늘의 공부</small><b id="statStudy"></b><em id="statFocus" class="stat-extra" hidden></em></span></button>
           <button type="button" class="stat" data-go="money"><span class="stat-icon yellow"><svg class="ico"><use href="#i-coins"/></svg></span><span><small>오늘의 지출</small><b id="statMoney"></b></span></button>
           <button type="button" class="stat" data-go="diary"><span class="stat-icon rose"><svg class="ico"><use href="#i-smile"/></svg></span><span><small>오늘의 기분</small><b id="statMood"></b></span></button>
         </div>
@@ -156,10 +158,15 @@
               <div class="progress"><div id="todayHabitBar" class="progress-bar"></div></div>
               <ul id="todayHabitList" class="today-list"></ul>
               <p id="todayHabitEmpty" class="empty" hidden>아직 습관이 없어요. <button type="button" class="link-btn inline" data-go="habits">첫 습관 만들기 ›</button></p>
+              <p id="todayHabitRest" class="empty" hidden>오늘은 쉬는 날이에요 🌿</p>
             </article>
             <article class="card dash-study">
               <div class="card-head"><h2>오늘의 공부</h2><button type="button" class="link-btn inline" data-go="study">전체 보기 ›</button></div>
               <div id="todayStudy"></div>
+              <div class="mini-timer">
+                <span class="mini-timer-text">⏱ <b id="miniTimerTime" class="timer-digits">25:00</b> <small id="miniTimerState" class="muted"></small></span>
+                <button id="miniTimerStart" type="button" class="secondary">시작</button>
+              </div>
             </article>
           </div>
           <div class="dash-col">
@@ -202,13 +209,47 @@
             <input id="habitUnit" maxlength="6" placeholder="단위 (번·잔·알)" aria-label="단위" />
             <button type="submit" class="primary">추가</button>
           </div>
-          <p class="muted small form-hint">예) 💧 물 마시기 · 하루 3 · 잔 → 한 잔 마실 때마다 한 번씩 눌러요</p>
+          <div class="day-row">
+            <span class="target-label">요일</span>
+            <div id="habitDays" class="day-picker" role="group" aria-label="하는 요일"></div>
+          </div>
+          <p class="muted small form-hint">예) 💧 물 마시기 · 하루 3 · 잔 → 한 잔 마실 때마다 한 번씩 눌러요. 쉬는 요일은 연속 기록이 끊기지 않아요.</p>
         </form>
         <button id="habitEditToggle" type="button" class="link-btn" aria-pressed="false">습관 편집</button>
       </section>
 
       <!-- 공부 -->
       <section id="studyView" class="view" role="tabpanel" hidden>
+        <div class="card timer-card">
+          <div class="card-head">
+            <h2>⏱ 집중 타이머</h2>
+            <span id="focusToday" class="muted"></span>
+          </div>
+          <div id="timerPresets" class="chip-tabs" role="radiogroup" aria-label="타이머 종류"></div>
+          <form id="customForm" class="custom-form" novalidate hidden>
+            <div class="segmented custom-kind" role="radiogroup" aria-label="종류">
+              <button type="button" data-custom-kind="focus" role="radio">집중</button>
+              <button type="button" data-custom-kind="break" role="radio">휴식</button>
+            </div>
+            <label id="customLabel" for="customInput">몇 분 집중할까요?</label>
+            <input id="customInput" type="number" inputmode="numeric" min="1" max="180" placeholder="예) 40" autocomplete="off" />
+            <span class="muted">분</span>
+            <button type="submit" class="primary">맞추기</button>
+            <button id="customCancel" type="button" class="secondary">취소</button>
+          </form>
+          <div class="timer-body">
+            <div class="timer-face">
+              <b id="timerTime" class="timer-digits">25:00</b>
+              <small id="timerState" class="muted"></small>
+            </div>
+            <div class="timer-actions">
+              <button id="timerStart" type="button" class="primary">시작</button>
+              <button id="timerReset" type="button" class="secondary">처음으로</button>
+            </div>
+          </div>
+          <div class="progress"><div id="timerBar" class="progress-bar"></div></div>
+          <p class="muted small form-hint">끝까지 마친 집중 시간만 오늘 기록에 쌓여요. 다른 앱으로 가 있으면 돌아왔을 때 알려 드려요.</p>
+        </div>
         <div id="goalList"></div>
         <p id="studyEmpty" class="card empty" hidden>단어장이나 책처럼 끝내고 싶은 공부를 목표로 넣어 보세요.<br>목표일에 맞춰 매일 할 분량과 복습을 알려 드려요.</p>
         <button id="goalAddToggle" type="button" class="primary wide">+ 새 공부 목표</button>
@@ -339,6 +380,14 @@
 
       <!-- 설정 -->
       <section id="settingsView" class="view" role="tabpanel" hidden>
+        <div class="card">
+          <h2>🌙 화면 모드</h2>
+          <div id="themeChoice" class="segmented three" role="radiogroup" aria-label="화면 모드">
+            <button type="button" data-theme-choice="system" role="radio">기기 설정 따라</button>
+            <button type="button" data-theme-choice="light" role="radio">밝게</button>
+            <button type="button" data-theme-choice="dark" role="radio">어둡게</button>
+          </div>
+        </div>
         <div class="card install-card">
           <img src="./icon-192.png" alt="" width="52" height="52" />
           <div class="install-text">
@@ -373,6 +422,19 @@
     <button type="button" data-tab="money"><svg class="ico"><use href="#i-wallet"/></svg>가계부</button>
     <button type="button" data-tab="diary"><svg class="ico"><use href="#i-edit"/></svg>기록</button>
   </nav>
+
+  <!-- 화면 안의 작은 창: 브라우저 입력 창(prompt)·확인 창(confirm) 대신 (app.js 의 ask) -->
+  <dialog id="askDialog" class="ask-dialog" aria-labelledby="askTitle">
+    <form id="askForm" method="dialog" novalidate>
+      <h2 id="askTitle"></h2>
+      <p id="askMessage" class="muted"></p>
+      <input id="askInput" autocomplete="off" />
+      <div class="ask-actions">
+        <button id="askCancel" type="button" class="secondary">취소</button>
+        <button id="askOk" type="submit" class="primary">확인</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
 

@@ -1,6 +1,6 @@
 {
   "name": "daily-log",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "습관 체크 · 공부 계획 · 가계부 · 일기를 한곳에 담은 생활 기록 웹앱",
   "scripts": {

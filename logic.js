@@ -3,10 +3,11 @@
 // 브라우저에서는 window.DailyLogLogic 으로, Node.js 테스트에서는 require('./logic.js') 로 사용합니다.
 //
 // 저장 데이터 모양:
-//   habits:  [{ id, name, emoji, target: 하루 목표 횟수, unit: 단위(예: '잔') }]
+//   habits:  [{ id, name, emoji, target: 하루 목표 횟수, unit: 단위(예: '잔'), days: 하는 요일 [0=일 … 6=토] }]
 //   checks:  { 'YYYY-MM-DD': { 습관 id: 그날 한 횟수 } }
 //   entries: [{ id, date, type: 'expense' | 'income', amount, category, memo }]
 //   diary:   { 'YYYY-MM-DD': { mood, text } }
+//   focus:   { 'YYYY-MM-DD': 그날 끝까지 마친 집중 타이머 시간(분) }
 //   shopping: [{ id, store: 마트, name: 품목, category: 지출 분류, price: 가격(모르면 0), bought, entryId: 체크할 때 적은 가계부 기록 id }]
 //   goals:   [{ id, name, emoji, kind: 'cards' | 'amount', unit, total, startDate, deadline,
 //              factor, factorDate, items: [...], reviewLog: { 'YYYY-MM-DD': { good, hard, again } } }]
@@ -87,6 +88,43 @@
 
   const isDone = (checks, date, habit) => checkCount(checks, date, habit.id) >= targetOf(habit);
 
+  // 요일 지정: days 에 그날 요일이 있으면 '하는 날', 없으면 '쉬는 날' (days 가 없으면 매일)
+  const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
+  const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+  const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // 화면에는 월요일부터
+
+  function weekday(date) {
+    const [y, m, d] = date.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  }
+
+  const isScheduled = (habit, date) => !Array.isArray(habit.days) || habit.days.includes(weekday(date));
+
+  // "월수금" "평일" "주말" "매일" "월, 목" 같은 입력을 요일 목록으로. 못 읽으면 null.
+  function parseDays(input) {
+    const text = String(input).replace(/[\s,·.\/]/g, '').replace(/요일/g, '');
+    if (!text) return null;
+    if (text === '매일') return [...EVERY_DAY];
+    if (text === '평일') return [1, 2, 3, 4, 5];
+    if (text === '주말') return [0, 6];
+    const days = new Set();
+    for (const ch of text) {
+      const i = DAY_NAMES.indexOf(ch);
+      if (i < 0) return null;
+      days.add(i);
+    }
+    return [...days].sort((a, b) => a - b);
+  }
+
+  // [1,3,5] → "월·수·금", 매일·평일·주말은 이름으로
+  function daysLabel(days) {
+    const key = (Array.isArray(days) ? days : EVERY_DAY).join();
+    if (key === EVERY_DAY.join()) return '매일';
+    if (key === '1,2,3,4,5') return '평일';
+    if (key === '0,6') return '주말';
+    return DAY_ORDER.filter(d => days.includes(d)).map(d => DAY_NAMES[d]).join('·');
+  }
+
   // 횟수를 바꾼 새 checks 를 돌려줍니다. (원본은 바꾸지 않음, 0이 되면 지움)
   function setCount(checks, date, habitId, n) {
     const day = { ...checks[date] };
@@ -122,10 +160,14 @@
 
   // 연속 기록: date 부터 하루씩 거슬러 올라가며 목표를 다 채운 날을 셉니다.
   // 오늘 아직 안 했으면 어제까지의 연속 기록을 보여 줘서 아침에 0으로 보이지 않게 합니다.
+  // 쉬는 요일은 건너뛰어 끊기지 않고, 쉬는 날에 했으면 그날도 셉니다.
   function streak(checks, habit, date) {
     let day = isDone(checks, date, habit) ? date : addDays(date, -1);
     let count = 0;
-    while (isDone(checks, day, habit)) { count++; day = addDays(day, -1); }
+    for (let i = 0; i < 3700; i++, day = addDays(day, -1)) {
+      if (isDone(checks, day, habit)) count++;
+      else if (isScheduled(habit, day)) break;
+    }
     return count;
   }
 
@@ -135,15 +177,16 @@
     for (let i = n - 1; i >= 0; i--) {
       const d = addDays(date, -i);
       const count = checkCount(checks, d, habit.id);
-      days.push({ date: d, count, done: count >= targetOf(habit) });
+      days.push({ date: d, count, done: count >= targetOf(habit), off: !isScheduled(habit, d) });
     }
     return days;
   }
 
-  // 그날 습관을 몇 개 다 채웠는지 (이번 주 흐름 막대용)
+  // 그날 하는 습관을 몇 개 다 채웠는지 (쉬는 요일인 습관은 빼고 셉니다)
   function habitRate(habits, checks, date) {
-    const done = habits.filter(h => isDone(checks, date, h)).length;
-    return { done, total: habits.length, pct: habits.length ? Math.round((done / habits.length) * 100) : 0 };
+    const due = habits.filter(h => isScheduled(h, date));
+    const done = due.filter(h => isDone(checks, date, h)).length;
+    return { done, total: due.length, pct: due.length ? Math.round((done / due.length) * 100) : 0 };
   }
 
   // date 가 들어 있는 주의 월요일~일요일
@@ -157,7 +200,8 @@
   // 습관 체크·가계부·일기·공부 중 하나라도 남긴 날
 
   function activeDates(data) {
-    const dates = new Set([...Object.keys(data.checks), ...Object.keys(data.diary), ...data.entries.map(e => e.date)]);
+    const dates = new Set([...Object.keys(data.checks), ...Object.keys(data.diary), ...data.entries.map(e => e.date),
+      ...Object.keys(data.focus || {})]);
     for (const g of data.goals || []) {
       for (const it of g.items) if (it.learnedOn) dates.add(it.learnedOn);
       for (const d of Object.keys(g.reviewLog)) dates.add(d);
@@ -364,6 +408,38 @@
     };
   }
 
+  // ── 집중 타이머 ────────────────────────────────────────
+  const FOCUS_PRESETS = [
+    { id: 'focus25', kind: 'focus', minutes: 25, name: '집중 25분' },
+    { id: 'focus50', kind: 'focus', minutes: 50, name: '집중 50분' },
+    { id: 'break5', kind: 'break', minutes: 5, name: '휴식 5분' },
+  ];
+  const MAX_FOCUS_DAY = 24 * 60;
+  const MAX_CUSTOM_MINUTES = 180; // 직접 정하는 집중 시간은 3시간까지
+
+  // "40" "40분" " 90 " → 분(정수). 1~180 이 아니면 null.
+  function parseMinutes(input) {
+    const cleaned = String(input).replace(/[\s분]/g, '');
+    if (!/^\d+$/.test(cleaned)) return null;
+    const n = Number(cleaned);
+    return n >= 1 && n <= MAX_CUSTOM_MINUTES ? n : null;
+  }
+
+  // 남은 시간(초): 도는 중이면 끝나는 시각으로 계산해, 새로 고침·화면 꺼짐에도 맞습니다.
+  const timerLeft = (timer, now) => (timer.endsAt ? Math.max(0, Math.ceil((timer.endsAt - now) / 1000)) : timer.left);
+
+  // 끝까지 마친 집중 시간을 그날에 더합니다.
+  function addFocus(focus, date, minutes) {
+    return { ...focus, [date]: Math.min(MAX_FOCUS_DAY, (focus[date] || 0) + minutes) };
+  }
+
+  // 12 → "12분", 85 → "1시간 25분"
+  function formatMinutes(min) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return h ? `${h}시간${m ? ` ${m}분` : ''}` : `${m}분`;
+  }
+
   // ── 쇼핑 리스트 ────────────────────────────────────────
   const SHOP_CATEGORY = '쇼핑'; // 분류를 안 고른(예전) 품목은 이 분류의 지출로 적힙니다
   const NO_STORE = '어디서든';
@@ -438,7 +514,7 @@
   // ── 데이터 전체 (저장·백업 가져오기) ───────────────────
 
   function emptyData() {
-    return { version: DATA_VERSION, habits: [], checks: {}, entries: [], diary: {}, goals: [], shopping: [] };
+    return { version: DATA_VERSION, habits: [], checks: {}, entries: [], diary: {}, goals: [], shopping: [], focus: {} };
   }
 
   function newId() {
@@ -466,6 +542,7 @@
         id: h.id, name, emoji: cleanText(h.emoji, 8) || '✅',
         target: isCount(h.target, MAX_TARGET) && h.target >= 1 ? h.target : 1,
         unit: cleanText(h.unit, 6).trim(),
+        days: normalizeDays(h.days),
       });
     }
 
@@ -506,6 +583,12 @@
       if (goal && !goalIds.has(goal.id)) { goalIds.add(goal.id); data.goals.push(goal); }
     }
 
+    if (isPlainObject(raw.focus)) {
+      for (const [date, min] of Object.entries(raw.focus)) {
+        if (isValidDate(date) && isCount(min, MAX_FOCUS_DAY) && min > 0) data.focus[date] = min;
+      }
+    }
+
     // shopping 이 없는 예전 백업도 그대로 읽힙니다. 지워진 가계부 기록을 가리키는 entryId 는 비웁니다.
     const entryIds = new Set(data.entries.map(e => e.id));
     const shopIds = new Set();
@@ -525,6 +608,12 @@
   }
 
   const isCount = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
+
+  // 요일 목록 검사: 없거나 잘못됐거나 비어 있으면 매일
+  function normalizeDays(days) {
+    const valid = Array.isArray(days) ? [...new Set(days.filter(d => isCount(d, 6)))].sort((a, b) => a - b) : [];
+    return valid.length ? valid : [...EVERY_DAY];
+  }
   const optionalDate = v => (isValidDate(v) ? v : null);
 
   function normalizeGoal(g) {
@@ -585,6 +674,8 @@
     DATA_VERSION, MAX_TEXT, CATEGORIES, MOODS,
     dateKey, addDays, isValidDate, monthOf, addMonths,
     MAX_TARGET, checkCount, isDone, tapHabit, undoTap, retarget, streak, recentDays, habitRate, weekOf,
+    EVERY_DAY, DAY_NAMES, DAY_ORDER, weekday, isScheduled, parseDays, daysLabel,
+    FOCUS_PRESETS, MAX_CUSTOM_MINUTES, parseMinutes, timerLeft, addFocus, formatMinutes,
     activeDates, recordStreak,
     parseAmount, formatWon, summarizeMonth, entriesOfMonth,
     SHOP_CATEGORY, NO_STORE, addShopItem, shopGroups, buyShopItem, unbuyShopItem, repriceShopItem,
