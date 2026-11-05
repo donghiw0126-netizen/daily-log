@@ -8,7 +8,8 @@
 //   entries: [{ id, date, type: 'expense' | 'income', amount, category, memo }]
 //   diary:   { 'YYYY-MM-DD': { mood, text } }
 //   focus:   { 'YYYY-MM-DD': 그날 끝까지 마친 집중 타이머 시간(분) }
-//   shopping: [{ id, store: 마트, name: 품목, category: 지출 분류, price: 가격(모르면 0), bought, entryId: 체크할 때 적은 가계부 기록 id }]
+//   shopping: [{ id, store: 마트, name: 품목, category: 지출 분류, qty: 수량, price: 1개 가격(모르면 0),
+//                bought, boughtOn: 산 날짜, entryId: 가계부에 적은 기록 id }]
 //   goals:   [{ id, name, emoji, kind: 'cards' | 'amount', unit, total, startDate, deadline,
 //              factor, factorDate, items: [...], reviewLog: { 'YYYY-MM-DD': { good, hard, again } } }]
 //            items — 단어 카드: { id, front, back, learnedOn, step, due, known }
@@ -445,39 +446,51 @@
   const NO_STORE = '어디서든';
 
   const shopCategory = c => (CATEGORIES.expense.includes(c) ? c : SHOP_CATEGORY);
+  const MAX_QTY = 99;
+  const qtyOf = it => it.qty || 1;
+  const shopTotal = it => it.price * qtyOf(it); // price 는 1개 가격, 가계부에는 × 수량
+  const shopMemo = it => `${it.store === NO_STORE ? '' : `${it.store} `}${it.name}${qtyOf(it) > 1 ? ` ×${qtyOf(it)}` : ''}`.slice(0, 100);
+  const shopEntry = (it, id, date) => ({ id, date, type: 'expense', amount: shopTotal(it), category: shopCategory(it.category), memo: shopMemo(it) });
 
-  function addShopItem(list, { store, name, category, price }, id) {
+  // "3" "3개" → 수량(정수). 1~99 가 아니면 null.
+  function parseQty(input) {
+    const cleaned = String(input).replace(/[\s개]/g, '');
+    if (!/^\d+$/.test(cleaned)) return null;
+    const n = Number(cleaned);
+    return n >= 1 && n <= MAX_QTY ? n : null;
+  }
+
+  function addShopItem(list, { store, name, category, price, qty }, id) {
     const item = {
       id, store: String(store || '').trim().slice(0, 20) || NO_STORE,
-      name: String(name || '').trim().slice(0, 40), category: shopCategory(category), price: parseAmount(price) || 0, bought: false, entryId: '',
+      name: String(name || '').trim().slice(0, 40), category: shopCategory(category),
+      qty: parseQty(qty === undefined ? 1 : qty) || 1, price: parseAmount(price) || 0, bought: false, entryId: '', boughtOn: null,
     };
     return item.name ? [...list, item] : list;
   }
 
-  // 마트별로 묶기 (처음 적은 마트부터). total: 아직 안 산 것의 예상 금액, spent: 산 것의 금액
+  // 마트별로 묶기 (처음 적은 마트부터). total: 아직 안 산 것의 예상 금액, spent: 산 것의 금액 (1개 가격 × 수량)
   function shopGroups(list) {
     const groups = new Map();
     for (const it of list) {
       if (!groups.has(it.store)) groups.set(it.store, { store: it.store, items: [], left: 0, total: 0, spent: 0 });
       const g = groups.get(it.store);
       g.items.push(it);
-      if (it.bought) g.spent += it.price;
-      else { g.left++; g.total += it.price; }
+      if (it.bought) g.spent += shopTotal(it);
+      else { g.left++; g.total += shopTotal(it); }
     }
     return [...groups.values()];
   }
 
-  // 샀어요: 가격이 있으면 그 날짜 가계부에 지출을 적고, 어떤 기록인지 기억해 둡니다.
-  function buyShopItem(data, itemId, date, entryId, price) {
+  // 샀어요: 산 날짜를 기억하고, 가격이 있으면 그 날짜 가계부에 지출을 적습니다.
+  // 가격을 몰라도 체크할 수 있고, 가격은 나중에 editShopItem 으로 넣으면 산 날짜로 적혀요.
+  function buyShopItem(data, itemId, date, entryId) {
     const it = data.shopping.find(x => x.id === itemId);
     if (!it || it.bought) return data;
-    const amount = price === undefined ? it.price : parseAmount(price) || 0;
-    const entry = amount > 0
-      ? { id: entryId, date, type: 'expense', amount, category: shopCategory(it.category), memo: `${it.store === NO_STORE ? '' : `${it.store} `}${it.name}`.slice(0, 100) }
-      : null;
+    const entry = shopTotal(it) > 0 ? shopEntry(it, entryId, date) : null;
     return {
       ...data,
-      shopping: data.shopping.map(x => (x.id === itemId ? { ...x, price: amount, bought: true, entryId: entry ? entryId : '' } : x)),
+      shopping: data.shopping.map(x => (x.id === itemId ? { ...x, bought: true, boughtOn: date, entryId: entry ? entryId : '' } : x)),
       entries: entry ? [...data.entries, entry] : data.entries,
     };
   }
@@ -488,27 +501,36 @@
     if (!it || !it.bought) return data;
     return {
       ...data,
-      shopping: data.shopping.map(x => (x.id === itemId ? { ...x, bought: false, entryId: '' } : x)),
+      shopping: data.shopping.map(x => (x.id === itemId ? { ...x, bought: false, boughtOn: null, entryId: '' } : x)),
       entries: it.entryId ? data.entries.filter(e => e.id !== it.entryId) : data.entries,
     };
   }
 
-  // 가격 고치기: 이미 산 품목이면 가계부 기록도 함께 맞춥니다.
-  // 기록이 있으면 금액을 바꾸고(가격을 지우면 기록도 지움), 없던 기록은 date 에 새로 적습니다.
-  function repriceShopItem(data, itemId, price, date, entryId) {
+  // 가격·수량 고치기 (changes: { price } 또는 { qty }). 이미 산 품목이면 가계부 기록도 함께 맞춥니다.
+  // 기록이 있으면 금액을 바꾸고(합계가 0이 되면 지움), 없던 기록은 산 날짜(boughtOn, 없으면 date)에 새로 적습니다.
+  function editShopItem(data, itemId, changes, date, entryId) {
     const it = data.shopping.find(x => x.id === itemId);
     if (!it) return data;
-    const amount = parseAmount(price) || 0;
-    if (!it.bought) return { ...data, shopping: data.shopping.map(x => (x.id === itemId ? { ...x, price: amount } : x)) };
-    const bought = buyShopItem(unbuyShopItem(data, itemId), itemId, date, entryId, String(amount || ''));
-    const old = it.entryId && data.entries.find(e => e.id === it.entryId);
-    if (!old || !amount) return bought;
-    // 원래 기록은 그 날짜·순서 그대로 두고 금액만 바꿉니다.
-    return {
-      ...bought,
-      shopping: bought.shopping.map(x => (x.id === itemId ? { ...x, entryId: old.id } : x)),
-      entries: data.entries.map(e => (e.id === old.id ? { ...e, amount } : e)),
+    const next = {
+      ...it,
+      price: 'price' in changes ? parseAmount(changes.price) || 0 : it.price,
+      qty: 'qty' in changes ? parseQty(changes.qty) || qtyOf(it) : qtyOf(it),
     };
+    let entries = data.entries;
+    if (it.bought) {
+      const old = it.entryId ? entries.find(e => e.id === it.entryId) : null;
+      if (old && shopTotal(next)) {
+        // 원래 기록은 그 날짜·순서 그대로 두고 금액과 메모만 바꿉니다.
+        entries = entries.map(e => (e.id === old.id ? { ...e, amount: shopTotal(next), memo: shopMemo(next) } : e));
+      } else if (old) {
+        entries = entries.filter(e => e.id !== old.id);
+        next.entryId = '';
+      } else if (shopTotal(next)) {
+        entries = [...entries, shopEntry(next, entryId, it.boughtOn || date)];
+        next.entryId = entryId;
+      } else next.entryId = '';
+    }
+    return { ...data, shopping: data.shopping.map(x => (x.id === itemId ? next : x)), entries };
   }
 
   // ── 데이터 전체 (저장·백업 가져오기) ───────────────────
@@ -600,8 +622,10 @@
       const bought = it.bought === true;
       data.shopping.push({
         id: it.id, store: cleanText(it.store, 20).trim() || NO_STORE, name, category: shopCategory(it.category),
+        qty: isCount(it.qty, MAX_QTY) && it.qty >= 1 ? it.qty : 1,
         price: Number.isInteger(it.price) && it.price > 0 && it.price <= MAX_AMOUNT ? it.price : 0,
         bought, entryId: bought && entryIds.has(it.entryId) ? it.entryId : '',
+        boughtOn: bought && isValidDate(it.boughtOn) ? it.boughtOn : null,
       });
     }
     return data;
@@ -678,7 +702,7 @@
     FOCUS_PRESETS, MAX_CUSTOM_MINUTES, parseMinutes, timerLeft, addFocus, formatMinutes,
     activeDates, recordStreak,
     parseAmount, formatWon, summarizeMonth, entriesOfMonth,
-    SHOP_CATEGORY, NO_STORE, addShopItem, shopGroups, buyShopItem, unbuyShopItem, repriceShopItem,
+    SHOP_CATEGORY, NO_STORE, MAX_QTY, parseQty, shopTotal, addShopItem, shopGroups, buyShopItem, unbuyShopItem, editShopItem,
     REVIEW_INTERVALS, MASTERED, LEVELS, UNITS,
     daysBetween, dailyPlan, reviewItem, applyReview, learnCard, addAmount, adjustFactor, parseCards, gradeTyped, newCard, createGoal,
     emptyData, newId, normalizeData,

@@ -652,7 +652,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .entry-memo { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .entry .icon-btn { min-width: 30px; height: 30px; color: var(--faint); }
-.shop-form { display: grid; grid-template-columns: 1fr 1.3fr 118px 112px auto; gap: 8px; margin-bottom: 6px; }
+.shop-form { display: grid; grid-template-columns: 1fr 1.2fr 96px 112px 124px auto; gap: 8px; margin-bottom: 6px; }
+.qty-field { display: flex; align-items: center; gap: 6px; border: 1px solid var(--field-line); border-radius: 12px; background: var(--field); padding-left: 10px; font-size: 13px; color: var(--muted); }
+.qty-field span { flex: none; white-space: nowrap; }
+.qty-field input { width: 100%; min-width: 0; border: 0; background: transparent; padding-left: 0; text-align: center; box-shadow: none; }
+.qty-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.shop-qty { flex: none; border: 0; border-radius: 999px; background: none; padding: 4px 8px; font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.shop-qty.many { background: var(--accent-softer); color: var(--accent-strong); font-weight: 700; }
+.shop-qty:hover { background: var(--accent-soft); color: var(--text); }
 .shop-group { margin-top: 14px; }
 .shop-store { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .shop-store b { font-size: 15px; }
@@ -663,7 +670,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .shop-toggle .check.on { background: var(--accent); border-color: var(--accent); }
 .shop-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .shop-cat { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--field); color: var(--muted); font-size: 11px; text-decoration: none; display: inline-block; vertical-align: 1px; }
-.shop-price { flex: none; border: 0; background: none; padding: 6px 8px; border-radius: 10px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.shop-price { flex: none; display: grid; justify-items: end; border: 0; background: none; padding: 6px 8px; border-radius: 10px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.shop-price b { font-weight: 700; }
+.shop-price small { font-size: 11px; font-weight: 500; color: var(--faint); }
+.shop-price.need { background: var(--peach); color: var(--peach-ink); font-weight: 700; }
 .shop-price:hover { background: var(--accent-softer); color: var(--text); }
 .shop-price.empty { font-weight: 500; font-size: 13px; color: var(--faint); text-decoration: underline dotted; }
 .shop-item.done .shop-name { color: var(--faint); text-decoration: line-through; }
@@ -757,7 +767,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 /* ── 폰·작은 화면 ───────────────────────────────── */
 @media (max-width: 900px) {
   .shop-form { grid-template-columns: 1fr 1fr; }
-  .shop-form .primary { grid-column: 1 / -1; }
+  .qty-field input { padding-block: 10px; }
   .layout { display: block; }
   .sidebar { display: none; }
   .main { padding: 12px 16px calc(100px + env(safe-area-inset-bottom)); }

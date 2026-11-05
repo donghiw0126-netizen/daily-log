@@ -328,14 +328,15 @@
           <form id="shopForm" class="shop-form">
             <input id="shopStore" list="shopStores" maxlength="20" placeholder="마트 예) 이마트" aria-label="마트" autocomplete="off" />
             <input id="shopName" maxlength="40" placeholder="품목 예) 토마토" aria-label="품목" autocomplete="off" required />
+            <label class="qty-field"><span>수량</span><input id="shopQty" type="number" inputmode="numeric" min="1" max="99" value="1" aria-label="수량" /></label>
             <select id="shopCategory" aria-label="분류"></select>
-            <input id="shopPrice" inputmode="numeric" placeholder="가격 (선택)" aria-label="가격" autocomplete="off" />
+            <input id="shopPrice" inputmode="numeric" placeholder="1개 가격 (선택)" aria-label="1개 가격" autocomplete="off" />
             <button type="submit" class="primary">추가</button>
             <datalist id="shopStores"></datalist>
           </form>
           <div id="shopList" class="shop-list"></div>
           <p id="shopEmpty" class="empty">사야 할 것을 마트별로 적어 두세요.</p>
-          <p class="form-hint muted">✓ 체크하면 고른 분류로 이 날짜 가계부에 적히고, 체크를 풀면 그 기록도 지워져요.</p>
+          <p class="form-hint muted">✓ 체크하면 고른 분류로 이 날짜 가계부에 적혀요(1개 가격 × 수량). 가격은 몰라도 체크하고, 나중에 가격을 눌러 넣으면 산 날짜로 적혀요. 체크를 풀면 그 기록도 지워져요.</p>
           <button id="shopClear" type="button" class="link-btn" hidden>산 것 정리하기</button>
         </div>
 

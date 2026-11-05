@@ -1080,8 +1080,16 @@
         name.append(el('small', 'shop-cat', it.category));
         toggle.append(el('span', `check${it.bought ? ' on' : ''}`, it.bought ? '✓' : ''), name);
         toggle.addEventListener('click', () => toggleShopItem(it));
-        const price = button(it.price ? L.formatWon(it.price) : '가격', `shop-price${it.price ? '' : ' empty'}`, () => editShopPrice(it));
-        price.setAttribute('aria-label', `${it.name} 가격 ${it.price ? L.formatWon(it.price) : '없음'}, 눌러서 고치기`);
+        const qty = button(`${it.qty}개`, `shop-qty${it.qty > 1 ? ' many' : ''}`, () => editShopQty(it));
+        qty.setAttribute('aria-label', `${it.name} 수량 ${it.qty}개, 눌러서 고치기`);
+        // 가격: 합계를 크게, 여러 개면 1개 가격을 작게. 샀는데 가격이 없으면 넣으라고 눈에 띄게
+        const price = button('', `shop-price${it.price ? '' : it.bought ? ' need' : ' empty'}`, () => editShopPrice(it));
+        if (!it.price) price.textContent = it.bought ? '+ 가격' : '가격';
+        else {
+          price.append(el('b', '', L.formatWon(L.shopTotal(it))));
+          if (it.qty > 1) price.append(el('small', '', `개당 ${L.formatWon(it.price)}`));
+        }
+        price.setAttribute('aria-label', `${it.name} 가격 ${it.price ? `1개 ${L.formatWon(it.price)}, 합계 ${L.formatWon(L.shopTotal(it))}` : '없음'}, 눌러서 고치기`);
         const del = el('button', 'icon-btn', '×');
         del.type = 'button';
         del.setAttribute('aria-label', `${it.name} 지우기`);
@@ -1090,7 +1098,7 @@
           saveData();
           renderShopping();
         });
-        li.append(toggle, price, del);
+        li.append(toggle, qty, price, del);
         ul.append(li);
       }
       box.append(head, ul);
@@ -1098,22 +1106,15 @@
     }));
   }
 
-  async function toggleShopItem(it) {
+  function toggleShopItem(it) {
     if (it.bought) {
       data = L.unbuyShopItem(data, it.id);
       if (it.entryId) toast(`가계부에서 ${it.name} 기록을 지웠어요.`);
     } else {
-      let price;
-      if (!it.price) {
-        const answer = await ask({ title: `${it.name}, 얼마였어요?`, message: '비워 두면 체크만 하고 가계부에는 안 적어요.',
-          input: { placeholder: '예) 5,000', inputmode: 'numeric', maxlength: 16 }, ok: '샀어요' });
-        if (answer === null) return; // 취소
-        if (answer.trim() && L.parseAmount(answer) === null) { toast('금액을 숫자로 적어 주세요.'); return; }
-        price = answer;
-      }
-      data = L.buyShopItem(data, it.id, date, L.newId(), price);
+      // 가격을 몰라도 바로 체크. 가격은 나중에 넣으면 이 날짜(산 날)로 가계부에 적혀요.
+      data = L.buyShopItem(data, it.id, date, L.newId());
       const bought = data.shopping.find(x => x.id === it.id);
-      toast(bought.entryId ? `${formatDate(date)} 가계부에 ${L.formatWon(bought.price)} 적었어요.` : `${it.name} 샀어요 ✓`);
+      toast(bought.entryId ? `${formatDate(date)} 가계부에 ${L.formatWon(L.shopTotal(bought))} 적었어요.` : `${it.name} 샀어요 ✓ 가격은 나중에 눌러서 넣을 수 있어요.`);
     }
     saveData();
     month = L.monthOf(date);
@@ -1126,16 +1127,37 @@
 
   async function editShopPrice(it) {
     const linked = it.bought && it.entryId;
-    const answer = await ask({ title: `${it.name} 가격`, message: linked ? '가계부 기록도 함께 바뀌어요. 비우면 기록을 지워요.' : '비워 두면 가격을 지워요.',
-      input: { value: it.price ? it.price.toLocaleString('ko-KR') : '', placeholder: '예) 5,000', inputmode: 'numeric', maxlength: 16 }, ok: '바꾸기' });
+    const lines = [];
+    if (it.qty > 1) lines.push(`${it.qty}개 → 합계는 자동으로 계산돼요.`);
+    if (linked) lines.push('가계부 기록도 함께 바뀌어요. 비우면 기록을 지워요.');
+    else if (it.bought) lines.push(`넣으면 산 날짜(${formatDate(it.boughtOn || date)}) 가계부에 적혀요.`);
+    else lines.push('비워 두면 가격을 지워요.');
+    const answer = await ask({ title: `${it.name} 1개 가격`, message: lines.join('\n'),
+      input: { value: it.price ? it.price.toLocaleString('ko-KR') : '', placeholder: '예) 5,000', inputmode: 'numeric', maxlength: 16 }, ok: '넣기' });
     if (answer === null) return; // 취소
     if (answer.trim() && L.parseAmount(answer) === null) { toast('가격을 숫자로 적어 주세요.'); return; }
-    data = L.repriceShopItem(data, it.id, answer, date, L.newId());
+    applyShopEdit(it, { price: answer });
+  }
+
+  async function editShopQty(it) {
+    const answer = await ask({ title: `${it.name}, 몇 개 살까요?`, message: `1부터 ${L.MAX_QTY}까지 적어 주세요.${it.bought && it.entryId ? '\n가계부 금액도 함께 바뀌어요.' : ''}`,
+      input: { value: String(it.qty), inputmode: 'numeric', maxlength: 3 }, ok: '바꾸기' });
+    if (answer === null) return; // 취소
+    if (!L.parseQty(answer)) { toast(`수량은 1부터 ${L.MAX_QTY}까지 숫자로 적어 주세요.`); return; }
+    applyShopEdit(it, { qty: answer });
+  }
+
+  // 가격·수량을 바꾸고, 가계부가 어떻게 바뀌었는지 알려 줍니다.
+  function applyShopEdit(it, changes) {
+    const linked = it.bought && it.entryId;
+    data = L.editShopItem(data, it.id, changes, date, L.newId());
     const now = data.shopping.find(x => x.id === it.id);
-    if (linked && now.entryId) toast(`가계부 기록도 ${L.formatWon(now.price)}으로 바꿨어요.`);
-    else if (now.entryId) toast(`${formatDate(date)} 가계부에 ${L.formatWon(now.price)} 적었어요.`);
+    const total = L.formatWon(L.shopTotal(now));
+    if (linked && now.entryId) toast(`가계부 기록도 ${total}으로 바꿨어요.`);
+    else if (now.entryId) toast(`${formatDate(now.boughtOn || date)} 가계부에 ${total} 적었어요.`);
     else if (linked) toast('가격을 지워서 가계부 기록도 지웠어요.');
-    else toast(now.price ? `${it.name} ${L.formatWon(now.price)}` : '가격을 지웠어요.');
+    else if ('qty' in changes) toast(`${it.name} ${now.qty}개`);
+    else toast(now.price ? `${it.name} 1개 ${L.formatWon(now.price)}` : '가격을 지웠어요.');
     saveData();
     render();
   }
@@ -1150,12 +1172,14 @@
     const price = $('shopPrice').value;
     if (price && L.parseAmount(price) === null) { toast('가격을 숫자로 적어 주세요.'); return; }
     const before = data.shopping.length;
+    if (!L.parseQty($('shopQty').value)) { toast(`수량은 1부터 ${L.MAX_QTY}까지 적어 주세요.`); $('shopQty').focus(); return; }
     data.shopping = L.addShopItem(data.shopping,
-      { store: $('shopStore').value, name: $('shopName').value, category: $('shopCategory').value, price }, L.newId());
+      { store: $('shopStore').value, name: $('shopName').value, category: $('shopCategory').value, price, qty: $('shopQty').value }, L.newId());
     if (data.shopping.length === before) { $('shopName').focus(); return; }
     saveData();
     // 같은 마트 품목을 이어서 적기 쉽게 마트 이름과 분류는 남겨 둡니다.
     $('shopName').value = '';
+    $('shopQty').value = '1';
     $('shopPrice').value = '';
     $('shopName').focus();
     renderShopping();
