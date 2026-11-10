@@ -648,7 +648,23 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .entry-date.current { color: var(--accent-strong); }
 .entry { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
 .entry-info { flex: 1; min-width: 0; display: grid; }
-.entry-cat { font-size: 14px; }
+.entry-cat { font-size: 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.entry-pay { border: 0; border-radius: 999px; padding: 1px 8px; background: var(--accent-softer); color: var(--accent-strong); font-size: 12px; font-weight: 600; }
+.entry-pay.empty { background: none; color: var(--faint); font-weight: 500; text-decoration: underline dotted; padding-inline: 2px; }
+.entry-pay:hover { background: var(--accent-soft); color: var(--text); }
+.pay-row { display: flex; align-items: flex-start; gap: 10px; }
+.pay-row .target-label { padding-top: 7px; }
+.pay-row[hidden] { display: none; }
+.pay-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pay-chip { padding: 7px 12px; font-size: 13px; }
+.pay-chip.add { padding-inline: 12px; color: var(--accent-strong); background: var(--accent-softer); }
+.sub-head { margin: 18px 0 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+.bar-fill.pay { background: var(--accent); }
+.bars li.unset .bar-label, .bars li.unset .bar-value { color: var(--faint); }
+.pay-list { list-style: none; margin: 4px 0 12px; padding: 0; }
+.pay-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.pay-name { flex: 1; min-width: 0; }
+.pay-item .icon-btn { min-width: 30px; height: 30px; color: var(--faint); }
 .entry-memo { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .entry .icon-btn { min-width: 30px; height: 30px; color: var(--faint); }
@@ -744,6 +760,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .ask-dialog input { width: 100%; margin-bottom: 16px; }
 .ask-dialog input[hidden] { display: none; }
 .ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ask-choices { display: grid; gap: 6px; margin-bottom: 16px; }
+.ask-choices[hidden] { display: none; }
+.ask-choice { text-align: left; border: 1px solid var(--line); border-radius: 12px; background: var(--field); padding: 11px 14px; font-weight: 600; }
+.ask-choice.on { border-color: var(--accent); background: var(--accent-softer); color: var(--accent-strong); }
+.ask-choice:hover { border-color: var(--accent); }
 
 /* ── 알림 ─────────────────────────────────────── */
 .toast {

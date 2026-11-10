@@ -479,3 +479,53 @@ test('쇼핑 리스트 백업: 예전 백업도 읽히고, 잘못된 항목과 �
   assert.deepEqual(back.shopping[1], { id: 's3', store: L.NO_STORE, name: '우유', category: '쇼핑', qty: 1, price: 0, bought: false, entryId: '', boughtOn: null });
   assert.equal(back.shopping.length, 2);
 });
+
+test('결제 수단: 추가·아이콘·지우기·바꾸기', () => {
+  let methods = L.emptyData().payMethods;
+  assert.deepEqual(methods, [{ id: 'cash', name: '현금' }]);
+  methods = L.addPayMethod(methods, ' 신한카드 ', 'p1');
+  methods = L.addPayMethod(methods, '카카오페이', 'p2');
+  assert.equal(L.addPayMethod(methods, '신한카드', 'p3'), methods); // 같은 이름
+  assert.equal(L.addPayMethod(methods, '  ', 'p3'), methods);      // 빈 이름
+  assert.deepEqual(methods.map(m => [m.name, L.payIcon(m.name)]), [['현금', '💵'], ['신한카드', '💳'], ['카카오페이', '📱']]);
+  assert.equal(L.payIcon('국민은행 계좌이체'), '🏦');
+
+  let data = L.emptyData();
+  data.payMethods = methods;
+  data.entries = [
+    { id: 'e1', date: TODAY, type: 'expense', amount: 5000, category: '식비', memo: '', pay: 'p1' },
+    { id: 'e2', date: TODAY, type: 'expense', amount: 3000, category: '식비', memo: '', pay: 'cash' },
+    { id: 'e3', date: TODAY, type: 'expense', amount: 7000, category: '쇼핑', memo: '' },
+    { id: 'e4', date: TODAY, type: 'expense', amount: 1000, category: '식비', memo: '', pay: 'p1' },
+    { id: 'e5', date: '2026-10-31', type: 'expense', amount: 9999, category: '식비', memo: '', pay: 'p1' },
+    { id: 'e6', date: TODAY, type: 'income', amount: 50000, category: '용돈', memo: '' },
+  ];
+  assert.deepEqual(L.summarizePay(data.entries, '2026-11', data.payMethods),
+    [{ id: '', name: '선택 안 함', amount: 7000 }, { id: 'p1', name: '신한카드', amount: 6000 }, { id: 'cash', name: '현금', amount: 3000 }]);
+
+  const set = L.setEntryPay(data.entries, 'e3', 'p2');
+  assert.equal(set[2].pay, 'p2');
+  assert.equal('pay' in L.setEntryPay(set, 'e3', '')[2], false);
+
+  const removed = L.removePayMethod(data, 'p1');
+  assert.deepEqual(removed.payMethods.map(m => m.id), ['cash', 'p2']);
+  assert.deepEqual(removed.entries.map(e => e.pay || '-'), ['-', 'cash', '-', '-', '-', '-']);
+});
+
+test('결제 수단 백업: 예전 백업은 현금 하나, 지워진 수단과 수입의 결제 수단은 비운다', () => {
+  assert.deepEqual(L.normalizeData({ version: 1 }).payMethods, [{ id: 'cash', name: '현금' }]);
+  const back = L.normalizeData({
+    version: 1,
+    payMethods: [{ id: 'p1', name: '신한카드' }, { id: 'p1', name: '중복' }, { id: 'p2', name: '' }, { id: 'p3', name: '신한카드' }, 'x'],
+    entries: [
+      { id: 'e1', date: TODAY, type: 'expense', amount: 1, category: '식비', memo: '', pay: 'p1' },
+      { id: 'e2', date: TODAY, type: 'expense', amount: 1, category: '식비', memo: '', pay: 'ghost' },
+      { id: 'e3', date: TODAY, type: 'income', amount: 1, category: '용돈', memo: '', pay: 'p1' },
+    ],
+  });
+  assert.deepEqual(back.payMethods, [{ id: 'p1', name: '신한카드' }]);
+  assert.deepEqual(back.entries.map(e => e.pay || '-'), ['p1', '-', '-']);
+  const data = L.emptyData();
+  data.entries.push({ id: 'e1', date: TODAY, type: 'expense', amount: 1, category: '식비', memo: '', pay: 'cash' });
+  assert.deepEqual(L.normalizeData(JSON.parse(JSON.stringify(data))), data);
+});

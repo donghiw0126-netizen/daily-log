@@ -317,6 +317,10 @@
             <select id="entryCategory" aria-label="분류"></select>
           </div>
           <input id="entryMemo" maxlength="100" placeholder="메모 (선택) 예) 점심 김밥" aria-label="메모" autocomplete="off" />
+          <div id="payRow" class="pay-row">
+            <span class="target-label">결제</span>
+            <div id="payChoice" class="pay-chips" role="radiogroup" aria-label="결제 수단"></div>
+          </div>
           <button type="submit" class="primary wide">이 날짜에 기록하기</button>
         </form>
 
@@ -352,6 +356,8 @@
             <div><span class="muted">남은 돈</span><b id="sumBalance"></b></div>
           </div>
           <ul id="categoryBars" class="bars"></ul>
+          <h3 id="payBarsHead" class="sub-head" hidden>결제 수단별</h3>
+          <ul id="payBars" class="bars"></ul>
         </div>
 
         <div class="card">
@@ -388,6 +394,15 @@
             <button type="button" data-theme-choice="light" role="radio">밝게</button>
             <button type="button" data-theme-choice="dark" role="radio">어둡게</button>
           </div>
+        </div>
+        <div class="card">
+          <h2>💳 결제 수단</h2>
+          <p class="muted small">가계부에 지출을 적을 때 고를 수 있어요. 지우면 그 수단으로 적은 기록은 '선택 안 함'이 돼요.</p>
+          <ul id="payList" class="pay-list"></ul>
+          <form id="payForm" class="add-row">
+            <input id="payName" maxlength="20" placeholder="예) 신한카드, 카카오페이, 계좌이체" aria-label="새 결제 수단" autocomplete="off" />
+            <button type="submit" class="primary">추가</button>
+          </form>
         </div>
         <div class="card install-card">
           <img src="./icon-192.png" alt="" width="52" height="52" />
@@ -430,6 +445,7 @@
       <h2 id="askTitle"></h2>
       <p id="askMessage" class="muted"></p>
       <input id="askInput" autocomplete="off" />
+      <div id="askChoices" class="ask-choices" hidden></div>
       <div class="ask-actions">
         <button id="askCancel" type="button" class="secondary">취소</button>
         <button id="askOk" type="submit" class="primary">확인</button>

@@ -69,8 +69,9 @@
   // input 이 있으면 적은 글자(취소하면 null), 없으면 확인 true / 취소 false 를 돌려줍니다.
   //   await ask({ title: '새 이름', input: { value: '물 마시기' } })
   //   await ask({ title: '지울까요?', message: '되돌릴 수 없어요.', ok: '지우기', danger: true })
+  //   await ask({ title: '결제 수단', choices: [{ value: 'cash', label: '💵 현금', on: true }] }) → 고른 value (취소하면 null)
   let askDone = null; // 열려 있는 창을 닫을 때 부를 함수
-  function ask({ title, message = '', input = null, ok = '확인', danger = false }) {
+  function ask({ title, message = '', input = null, choices = null, ok = '확인', danger = false }) {
     if (askDone) askDone(false); // 이미 열린 창은 취소로 닫고
     const dialog = $('askDialog');
     $('askTitle').textContent = title;
@@ -87,14 +88,23 @@
     }
     $('askOk').textContent = ok;
     $('askOk').className = danger ? 'danger-fill' : 'primary';
+    $('askOk').hidden = Boolean(choices); // 고르기 창은 누르면 바로 정해져요
+    let chosen = null;
+    $('askChoices').hidden = !choices;
+    $('askChoices').replaceChildren(...(choices || []).map(c => {
+      const b = button(c.label, `ask-choice${c.on ? ' on' : ''}`, () => { chosen = c.value; if (askDone) askDone(true); });
+      b.setAttribute('aria-pressed', String(Boolean(c.on)));
+      return b;
+    }));
     return new Promise(resolve => {
       askDone = confirmed => {
         askDone = null;
         if (dialog.open) dialog.close();
-        resolve(input ? (confirmed ? field.value : null) : confirmed);
+        if (choices) resolve(confirmed ? chosen : null);
+        else resolve(input ? (confirmed ? field.value : null) : confirmed);
       };
       dialog.showModal();
-      if (input) { field.focus(); field.select(); } else $('askOk').focus();
+      if (input) { field.focus(); field.select(); } else if (choices) $('askChoices').querySelector('.on, button').focus(); else $('askOk').focus();
     });
   }
   $('askForm').addEventListener('submit', e => { e.preventDefault(); if (askDone) askDone(true); });
@@ -997,10 +1007,107 @@
     }
     const select = $('entryCategory');
     select.replaceChildren(...L.CATEGORIES[entryType].map(c => el('option', '', c)));
+    renderPayChoice();
   }
+
+  // ── 결제 수단 ──────────────────────────────────────────
+  // 마지막에 고른 수단을 기억해 다음에도 그대로 (이 기기의 편의 설정이라 기록과 따로 저장)
+  const LAST_PAY_KEY = 'dailylog:lastPay';
+  let entryPay = '';
+  try { entryPay = localStorage.getItem(LAST_PAY_KEY) || ''; } catch { /* 처음 */ }
+
+  const payLabel = m => `${L.payIcon(m.name)} ${m.name}`;
+  const payOf = id => data.payMethods.find(m => m.id === id);
+
+  function renderPayChoice() {
+    $('payRow').hidden = entryType !== 'expense'; // 수입은 고를 필요가 없어요
+    if (!payOf(entryPay)) entryPay = '';
+    $('payChoice').replaceChildren(...data.payMethods.map(m => {
+      const on = m.id === entryPay;
+      const b = button(payLabel(m), `chip-tab pay-chip${on ? ' active' : ''}`, () => {
+        entryPay = on ? '' : m.id; // 한 번 더 누르면 선택 안 함
+        try { localStorage.setItem(LAST_PAY_KEY, entryPay); } catch { /* 이번만 */ }
+        renderPayChoice();
+      });
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(on));
+      return b;
+    }), button('＋', 'chip-tab pay-chip add', addPayQuick));
+    $('payChoice').lastChild.setAttribute('aria-label', '결제 수단 추가');
+  }
+
+  async function addPayQuick() {
+    const name = await ask({ title: '결제 수단 추가', message: '예) 신한카드, 카카오페이, 계좌이체', input: { maxlength: 20, placeholder: '이름' }, ok: '추가' });
+    if (name === null) return;
+    addPay(name, true);
+  }
+
+  // select: 추가하고 바로 고를지 (입력 칸에서 추가할 때)
+  function addPay(name, select) {
+    const before = data.payMethods;
+    const id = L.newId();
+    data.payMethods = L.addPayMethod(before, name, id);
+    if (data.payMethods === before) {
+      toast(!name.trim() ? '이름을 적어 주세요.' : before.length >= L.MAX_PAY_METHODS ? `결제 수단은 ${L.MAX_PAY_METHODS}개까지 만들 수 있어요.` : '이미 있는 이름이에요.');
+      return false;
+    }
+    if (select) {
+      entryPay = id;
+      try { localStorage.setItem(LAST_PAY_KEY, entryPay); } catch { /* 이번만 */ }
+    }
+    saveData();
+    render();
+    renderPayChoice();
+    return true;
+  }
+
+  // 내역에서 결제 수단 바꾸기
+  async function changeEntryPay(e) {
+    const value = await ask({
+      title: '결제 수단', message: `${formatDate(e.date)} ${e.category} ${L.formatWon(e.amount)}${e.memo ? ` · ${e.memo}` : ''}`,
+      choices: [...data.payMethods.map(m => ({ value: m.id, label: payLabel(m), on: m.id === e.pay })), { value: '', label: '선택 안 함', on: !payOf(e.pay) }],
+    });
+    if (value === null) return;
+    data.entries = L.setEntryPay(data.entries, e.id, value);
+    saveData();
+    renderMoney();
+  }
+
+  // 설정: 결제 수단 목록 (이름 바꾸기·지우기)
+  function renderPayList() {
+    $('payList').replaceChildren(...data.payMethods.map(m => {
+      const li = el('li', 'pay-item');
+      const used = data.entries.filter(e => e.pay === m.id).length;
+      li.append(el('span', 'pay-name', payLabel(m)), el('span', 'muted small', used ? `${used}건` : ''));
+      const rename = button('✎', 'icon-btn', async () => {
+        const name = await ask({ title: '이름 바꾸기', input: { value: m.name, maxlength: 20 }, ok: '바꾸기' });
+        if (name === null || !name.trim() || name.trim() === m.name) return;
+        if (data.payMethods.some(x => x.name === name.trim())) { toast('이미 있는 이름이에요.'); return; }
+        data.payMethods = data.payMethods.map(x => (x.id === m.id ? { ...x, name: name.trim().slice(0, 20) } : x));
+        saveData();
+        render();
+      });
+      rename.setAttribute('aria-label', `${m.name} 이름 바꾸기`);
+      const del = button('×', 'icon-btn', async () => {
+        if (!await ask({ title: `'${m.name}'을(를) 지울까요?`, message: used ? `이 수단으로 적은 기록 ${used}건은 '선택 안 함'이 돼요. 금액은 그대로 남아요.` : '아직 이 수단으로 적은 기록은 없어요.', ok: '지우기', danger: true })) return;
+        data = L.removePayMethod(data, m.id);
+        saveData();
+        render();
+      });
+      del.setAttribute('aria-label', `${m.name} 지우기`);
+      li.append(rename, del);
+      return li;
+    }));
+  }
+
+  $('payForm').addEventListener('submit', e => {
+    e.preventDefault();
+    if (addPay($('payName').value, false)) { $('payName').value = ''; $('payName').focus(); }
+  });
 
   function renderMoney() {
     renderShopping();
+    renderPayChoice(); // 설정에서 결제 수단을 바꿨을 수 있어요
     $('monthLabel').textContent = formatMonth(month);
     $('nextMonth').disabled = month >= L.monthOf(L.dateKey());
     const s = L.summarizeMonth(data.entries, month);
@@ -1022,6 +1129,20 @@
       bars.append(li);
     }
 
+    // 결제 수단별 지출 (고른 기록이 하나라도 있을 때만)
+    const pays = L.summarizePay(data.entries, month, data.payMethods);
+    const showPays = pays.some(p => p.id);
+    $('payBarsHead').hidden = !showPays;
+    $('payBars').replaceChildren(...(showPays ? pays : []).map(p => {
+      const li = el('li', p.id ? '' : 'unset');
+      const track = el('div', 'bar-track');
+      const fill = el('div', 'bar-fill pay');
+      fill.style.width = `${(p.amount / pays[0].amount) * 100}%`;
+      track.append(fill);
+      li.append(el('span', 'bar-label', p.id ? payLabel(payOf(p.id)) : p.name), track, el('span', 'bar-value', L.formatWon(p.amount)));
+      return li;
+    }));
+
     const list = $('entryList');
     list.replaceChildren();
     const entries = L.entriesOfMonth(data.entries, month);
@@ -1034,7 +1155,14 @@
       }
       const li = el('li', 'entry');
       const info = el('div', 'entry-info');
-      info.append(el('span', 'entry-cat', e.category));
+      const top = el('span', 'entry-cat', e.category);
+      if (e.type === 'expense') {
+        const m = payOf(e.pay);
+        const pay = button(m ? payLabel(m) : '+ 결제 수단', `entry-pay${m ? '' : ' empty'}`, () => changeEntryPay(e));
+        pay.setAttribute('aria-label', `결제 수단 ${m ? m.name : '없음'}, 눌러서 바꾸기`);
+        top.append(pay);
+      }
+      info.append(top);
       if (e.memo) info.append(el('span', 'entry-memo', e.memo));
       const amount = el('span', `entry-amount ${e.type === 'income' ? 'good' : ''}`,
         `${e.type === 'income' ? '+' : '−'}${L.formatWon(e.amount)}`);
@@ -1207,16 +1335,18 @@
     e.preventDefault();
     const amount = L.parseAmount($('entryAmount').value);
     if (amount === null) { toast('금액을 숫자로 적어 주세요.'); $('entryAmount').focus(); return; }
-    data.entries.push({
+    const entry = {
       id: L.newId(), date, type: entryType, amount,
       category: $('entryCategory').value, memo: $('entryMemo').value.trim().slice(0, 100),
-    });
+    };
+    if (entryType === 'expense' && payOf(entryPay)) entry.pay = entryPay;
+    data.entries.push(entry);
     saveData();
     $('entryAmount').value = '';
     $('entryMemo').value = '';
     month = L.monthOf(date);
     renderMoney();
-    toast(`${entryType === 'income' ? '수입' : '지출'} ${L.formatWon(amount)} 기록했어요.`);
+    toast(`${entryType === 'income' ? '수입' : '지출'} ${L.formatWon(amount)}${entry.pay ? ` (${payOf(entry.pay).name})` : ''} 기록했어요.`);
   });
 
   $('prevMonth').addEventListener('click', () => { month = L.addMonths(month, -1); renderMoney(); });
@@ -1650,7 +1780,7 @@
     else if (tab === 'study') renderStudy();
     else if (tab === 'money') renderMoney();
     else if (tab === 'diary') renderDiary();
-    else { renderSettings(); renderInstall(); renderTheme(); }
+    else { renderSettings(); renderPayList(); renderInstall(); renderTheme(); }
   }
 
   $('prevDay').addEventListener('click', () => setDate(L.addDays(date, -1)));

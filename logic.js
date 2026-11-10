@@ -5,7 +5,8 @@
 // 저장 데이터 모양:
 //   habits:  [{ id, name, emoji, target: 하루 목표 횟수, unit: 단위(예: '잔'), days: 하는 요일 [0=일 … 6=토] }]
 //   checks:  { 'YYYY-MM-DD': { 습관 id: 그날 한 횟수 } }
-//   entries: [{ id, date, type: 'expense' | 'income', amount, category, memo }]
+//   entries: [{ id, date, type: 'expense' | 'income', amount, category, memo, pay?: 결제 수단 id (지출만, 없으면 선택 안 함) }]
+//   payMethods: [{ id, name }] 결제 수단 (현금, 신한카드, 카카오페이 …)
 //   diary:   { 'YYYY-MM-DD': { mood, text } }
 //   focus:   { 'YYYY-MM-DD': 그날 끝까지 마친 집중 타이머 시간(분) }
 //   shopping: [{ id, store: 마트, name: 품목, category: 지출 분류, qty: 수량, price: 1개 가격(모르면 0),
@@ -248,6 +249,56 @@
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount);
     return { income, expense, balance: income - expense, categories };
+  }
+
+  // ── 결제 수단 ──────────────────────────────────────────
+  const MAX_PAY_METHODS = 20;
+  const DEFAULT_PAY_METHODS = [{ id: 'cash', name: '현금' }];
+
+  // 이름으로 아이콘 고르기: 현금 💵 · 페이 📱 · 계좌·이체·통장 🏦 · 그 밖(카드) 💳
+  function payIcon(name) {
+    if (/현금/.test(name)) return '💵';
+    if (/페이|pay/i.test(name)) return '📱';
+    if (/계좌|이체|통장|은행/.test(name)) return '🏦';
+    return '💳';
+  }
+
+  // 새 결제 수단. 이름이 비었거나 이미 있거나 너무 많으면 그대로 돌려줍니다.
+  function addPayMethod(list, name, id) {
+    const clean = String(name || '').trim().slice(0, 20);
+    if (!clean || list.length >= MAX_PAY_METHODS || list.some(m => m.name === clean)) return list;
+    return [...list, { id, name: clean }];
+  }
+
+  // 결제 수단 지우기: 그 수단으로 적은 기록은 '선택 안 함'으로
+  function removePayMethod(data, id) {
+    return {
+      ...data,
+      payMethods: data.payMethods.filter(m => m.id !== id),
+      entries: data.entries.map(e => (e.pay === id ? withoutPay(e) : e)),
+    };
+  }
+
+  function withoutPay(entry) {
+    const { pay, ...rest } = entry;
+    return rest;
+  }
+
+  // 기록의 결제 수단 바꾸기 (빈 값이면 선택 안 함)
+  const setEntryPay = (entries, entryId, pay) =>
+    entries.map(e => (e.id !== entryId ? e : pay ? { ...e, pay } : withoutPay(e)));
+
+  // 한 달 지출을 결제 수단별로 (큰 순서). 고르지 않은 지출은 id ''(선택 안 함)로 모읍니다.
+  function summarizePay(entries, month, methods) {
+    const sums = new Map();
+    for (const e of entries) {
+      if (e.type !== 'expense' || monthOf(e.date) !== month) continue;
+      const id = methods.some(m => m.id === e.pay) ? e.pay : '';
+      sums.set(id, (sums.get(id) || 0) + e.amount);
+    }
+    return [...sums]
+      .map(([id, amount]) => ({ id, name: id ? methods.find(m => m.id === id).name : '선택 안 함', amount }))
+      .sort((a, b) => b.amount - a.amount);
   }
 
   // 한 달 치 내역을 최근 날짜부터, 같은 날은 입력한 순서대로
@@ -536,7 +587,8 @@
   // ── 데이터 전체 (저장·백업 가져오기) ───────────────────
 
   function emptyData() {
-    return { version: DATA_VERSION, habits: [], checks: {}, entries: [], diary: {}, goals: [], shopping: [], focus: {} };
+    return { version: DATA_VERSION, habits: [], checks: {}, entries: [], diary: {}, goals: [], shopping: [], focus: {},
+      payMethods: DEFAULT_PAY_METHODS.map(m => ({ ...m })) };
   }
 
   function newId() {
@@ -581,12 +633,24 @@
       }
     }
 
+    // 결제 수단: 없는 예전 백업은 '현금' 하나로 시작합니다.
+    if (Array.isArray(raw.payMethods)) {
+      data.payMethods = [];
+      for (const m of raw.payMethods) {
+        if (!isPlainObject(m) || typeof m.id !== 'string' || !m.id || data.payMethods.some(x => x.id === m.id)) continue;
+        data.payMethods = addPayMethod(data.payMethods, cleanText(m.name, 20), m.id);
+      }
+    }
+    const payIds = new Set(data.payMethods.map(m => m.id));
+
     for (const e of Array.isArray(raw.entries) ? raw.entries : []) {
       if (!isPlainObject(e) || typeof e.id !== 'string' || !isValidDate(e.date)) continue;
       if (e.type !== 'expense' && e.type !== 'income') continue;
       if (!Number.isInteger(e.amount) || e.amount <= 0 || e.amount > MAX_AMOUNT) continue;
       const category = CATEGORIES[e.type].includes(e.category) ? e.category : '기타';
-      data.entries.push({ id: e.id, date: e.date, type: e.type, amount: e.amount, category, memo: cleanText(e.memo, 100) });
+      const entry = { id: e.id, date: e.date, type: e.type, amount: e.amount, category, memo: cleanText(e.memo, 100) };
+      if (e.type === 'expense' && payIds.has(e.pay)) entry.pay = e.pay; // 지워진 수단은 선택 안 함으로
+      data.entries.push(entry);
     }
 
     if (isPlainObject(raw.diary)) {
@@ -702,6 +766,7 @@
     FOCUS_PRESETS, MAX_CUSTOM_MINUTES, parseMinutes, timerLeft, addFocus, formatMinutes,
     activeDates, recordStreak,
     parseAmount, formatWon, summarizeMonth, entriesOfMonth,
+    MAX_PAY_METHODS, payIcon, addPayMethod, removePayMethod, setEntryPay, summarizePay,
     SHOP_CATEGORY, NO_STORE, MAX_QTY, parseQty, shopTotal, addShopItem, shopGroups, buyShopItem, unbuyShopItem, editShopItem,
     REVIEW_INTERVALS, MASTERED, LEVELS, UNITS,
     daysBetween, dailyPlan, reviewItem, applyReview, learnCard, addAmount, adjustFactor, parseCards, gradeTyped, newCard, createGoal,
